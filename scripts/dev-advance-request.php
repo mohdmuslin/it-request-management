@@ -1,6 +1,6 @@
 <?php
 
-/**
+/*
  * Drive a request to a given workflow stage, for browser walks.
  *
  * A dev helper, not part of the application. Walking the real UI through five stages
@@ -13,11 +13,6 @@
  * Stages: completeness_review | technical_recommendation | consolidation |
  *         committee_decision | closure
  */
-
-require __DIR__.'/../vendor/autoload.php';
-
-$app = require __DIR__.'/../bootstrap/app.php';
-$app->make(Kernel::class)->bootstrap();
 
 use App\Enums\Decision;
 use App\Enums\RecommendationOutcome;
@@ -32,6 +27,22 @@ use App\Services\GovernanceService;
 use App\Services\WorkflowDecisionService;
 use App\Services\WorkflowService;
 use Illuminate\Contracts\Console\Kernel;
+
+/*
+ * EVERY import must appear ABOVE this point.
+ *
+ * A `use` statement only applies from the line it appears on, so an import placed
+ * after the bootstrap does nothing — and Pint's `fully_qualified_strict_types` fixer
+ * actively moves a bare class name to the import block at the BOTTOM of a file, which
+ * leaves the code referring to a class the file never imported. The symptom is
+ * `Class "Kernel" does not exist` from deep inside the container, which points at the
+ * framework rather than at the file.
+ */
+
+require __DIR__.'/../vendor/autoload.php';
+
+$app = require __DIR__.'/../bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
 
 $id = (int) ($argv[1] ?? 0);
 $target = $argv[2] ?? 'completeness_review';
@@ -61,35 +72,57 @@ $hou = $userFor(UserRole::Hou);
 
 auth()->login($reviewer);   // a real actor, so history rows are not null
 
-$advanceApprovals = function () use ($request, $workflow, $decisions, $owner, $sponsor) {
+/**
+ * Walk a request through the two approval stages.
+ *
+ * EACH STEP NAMES THE STAGE IT BELONGS TO.
+ *
+ * The first version looped "while not yet at completeness review, decide whatever task
+ * is pending". Run against a request that had ALREADY reached the committee, that loop
+ * decided the committee's task — because it was pending — and left the request in a
+ * state no real sequence produces: consolidated before its recommendations existed.
+ *
+ * Guarding on the stage rather than on "is there a task?" is the fix. A pending task is
+ * not evidence that its stage is the next one due.
+ */
+$advanceApprovals = function () use ($request, $workflow, $decisions) {
     if ($request->fresh()->current_stage === WorkflowStage::Submission->value) {
         $workflow->submit($request);
+        echo "  submitted\n";
     }
 
-    foreach ([$owner, $sponsor] as $approver) {
-        $current = $request->fresh()->current_stage;
+    foreach ([WorkflowStage::ProjectOwner, WorkflowStage::ProjectSponsor] as $stage) {
+        $fresh = $request->fresh();
 
-        if ($current === WorkflowStage::CompletenessReview->value) {
+        // Already past this stage — do not re-decide it.
+        if ($fresh->current_stage !== $stage->value) {
             break;
         }
 
-        // The approval task may be assigned to the approver or fall back, so act as
-        // whoever the task actually names.
-        $task = $request->fresh()->pendingApprovalTask;
+        $task = $fresh->pendingApprovalTask;
 
         if (! $task) {
             break;
         }
 
-        $actor = User::find($task->approver_id) ?? $approver;
-        auth()->login($actor);
+        // The task names its approver, so act as that person rather than guessing.
+        $actor = User::find($task->approver_id);
 
-        $decisions->decide($request->fresh(), $actor, Decision::Approved);
-        echo "  approved at {$current}\n";
+        if (! $actor) {
+            fwrite(STDERR, "  no approver for the task at {$stage->value}; stopping.\n");
+
+            break;
+        }
+
+        auth()->login($actor);
+        $decisions->decide($fresh, $actor, Decision::Approved);
+
+        echo "  approved at {$stage->label()} by {$actor->name}\n";
     }
 };
 
 $order = [
+    'submission' => -1,
     'completeness_review' => 0,
     'technical_recommendation' => 1,
     'consolidation' => 2,
@@ -97,7 +130,28 @@ $order = [
     'closure' => 4,
 ];
 
-$want = $order[$target] ?? 0;
+if (! array_key_exists($target, $order)) {
+    fwrite(STDERR, "Unknown stage '{$target}'. Valid: ".implode(', ', array_keys($order))."\n");
+    exit(1);
+}
+
+$want = $order[$target];
+
+/*
+ * Refuse to walk BACKWARDS.
+ *
+ * Re-running this script against a request that has already moved on would decide
+ * whatever task happens to be pending and leave the request in a state no real
+ * sequence produces. Comparing the request's current position against the requested
+ * one catches that before anything is written.
+ */
+$currentOrder = $order[$request->current_stage ?? ''] ?? null;
+
+if ($currentOrder !== null && $currentOrder > $want) {
+    fwrite(STDERR, "{$request->request_no} is already at '{$request->current_stage}', "
+        ."which is past '{$target}'. Refusing to walk it backwards.\n");
+    exit(1);
+}
 
 echo "Advancing {$request->request_no} to {$target}\n";
 

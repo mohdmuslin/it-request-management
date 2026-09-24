@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ReportExportController;
 use App\Livewire\Admin\AuditLog;
 use App\Livewire\Admin\ReferenceData;
 use App\Livewire\Admin\Settings;
@@ -95,6 +96,17 @@ Route::middleware('auth')->group(function () {
     Route::get('/governance', App\Livewire\Governance\Index::class)->name('governance.index');
     Route::get('/committee', App\Livewire\Committee\Index::class)->name('committee.index');
     Route::get('/reports', App\Livewire\Reports\Index::class)->name('reports.index');
+
+    /*
+     * The CSV export.
+     *
+     * A plain controller route, not a Livewire component: a download needs a
+     * Content-Disposition header and raw bytes, which a component render cannot
+     * produce. It takes the same querystring the report puts in its URL, so the file
+     * and the screen it came from contain the same set.
+     */
+    Route::get('/reports/export', ReportExportController::class)
+        ->name('reports.export');
 
     /*
      * Administration.

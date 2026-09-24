@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Services\BusinessCalendar;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -26,9 +28,35 @@ class Holiday extends Model
     protected function casts(): array
     {
         return [
-            'date' => 'date',
             'manually_overridden_at' => 'datetime',
         ];
+    }
+
+    /**
+     * The date, stored as `Y-m-d`.
+     *
+     * WHY THIS IS A MUTATOR RATHER THAN A `date` CAST
+     *
+     * Laravel's `date` cast serialises through `fromDateTime()`, which writes
+     * "2026-12-25 00:00:00" into the column. MySQL's DATE type truncates that back to
+     * "2026-12-25", so everything works there — and SQLite stores the whole string.
+     *
+     * The result is a bug that only appears on one of the two drivers: the
+     * `unique:holidays,date` validation rule compares against "2026-12-25", finds no
+     * match in a column holding "2026-12-25 00:00:00", passes — and then the database
+     * rejects the insert. The user sees a database error instead of "that date is
+     * already in the calendar".
+     *
+     * Writing the date portion explicitly makes the stored value identical on both
+     * drivers, so the validation, the unique index and any `where('date', ...)` query
+     * all agree.
+     */
+    protected function date(): Attribute
+    {
+        return Attribute::make(
+            get: fn ($value) => $value === null ? null : CarbonImmutable::parse($value),
+            set: fn ($value) => $value === null ? null : CarbonImmutable::parse($value)->toDateString(),
+        );
     }
 
     /** Whether this holiday closes the whole day. */
