@@ -1,0 +1,56 @@
+# ---------------------------------------------------------------------------
+# Directory listing is disabled.
+#
+# WHY THIS IS HERE AND NOT ONLY ON THE SERVER
+#
+# The document root on the hosted environment is this `public/` folder, and
+# directory listing was manually disabled there. But the FTP deploy action
+# RECONCILES the remote tree against the local one — it deletes remote files that
+# do not exist locally and overwrites the ones that do. So a hand-made .htaccess
+# on the server is removed by the next deploy, silently, and indexing comes back.
+#
+# The fix is to keep the rule in the repository, which is the copy that wins.
+#
+# Wrapped in <IfModule> deliberately: a bare `Options -Indexes` returns 500 on
+# LiteSpeed when AllowOverride does not permit `Options`, which is a harder
+# failure to diagnose than the listing it was meant to prevent.
+# ---------------------------------------------------------------------------
+<IfModule mod_autoindex.c>
+    Options -Indexes
+</IfModule>
+
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    RewriteEngine On
+
+    # Handle Authorization headers — required for token or basic auth to reach PHP.
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Redirect trailing slashes when not a directory.
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} (.+)/$
+    RewriteRule ^ %1 [L,R=301]
+
+    # Send requests to the front controller.
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# ---------------------------------------------------------------------------
+# Note on further hardening, deliberately NOT added here.
+#
+# Rules blocking .env, composer.json, vendor/, storage/ and archives were
+# considered and left out. The document root is this public/ folder, so those
+# paths are a level ABOVE it and are already unreachable. Adding <FilesMatch> and
+# RedirectMatch rules for them risks a 500 on this host if mod_access_compat is
+# absent or AllowOverride is restricted — and with no SSH and no cPanel terminal,
+# a .htaccess that breaks the site cannot be debugged from the server side.
+#
+# If the document root is ever repointed at the application root, add them then,
+# and test immediately.
+# ---------------------------------------------------------------------------

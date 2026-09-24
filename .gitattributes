@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+# Windows-only script formats keep CRLF. Everything else is normalised to LF so the
+# working tree matches the Linux server — a mismatch here shows up as every file
+# appearing modified after a fresh clone.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

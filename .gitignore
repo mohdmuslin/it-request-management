@@ -1,0 +1,41 @@
+# Laravel application root — the app lives at the repository root, with public/ as the
+# document root on the server. See docs/architecture.md §8.
+
+/.phpunit.cache
+/node_modules
+/public/build
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+/vendor
+.env
+.env.backup
+.env.production
+.phpactor.json
+auth.json
+npm-debug.log
+yarn-error.log
+/.fleet
+/.idea
+/.nova
+/.vscode
+/.zed
+
+# --- House section -----------------------------------------------------------
+# Throwaway scratch files from development sessions. The two existing projects in
+# this workspace use the same convention, so leftover debug scripts do not end up
+# committed by accident.
+_msg*.txt
+_*.php
+!public/_*.php
+
+# The FTP deploy action keeps its reconciliation state in a file that lives ON THE
+# SERVER. It travelled with a moved folder once and then falsely claimed
+# public/index.php was already deployed, which produced a 403 with no front
+# controller. Never commit it.
+.ftp-deploy-sync-state*.json
+
+# Local database files, if SQLite is used for a quick test.
+*.sqlite
+*.sqlite3

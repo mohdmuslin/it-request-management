@@ -1,0 +1,1391 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IT Request Management System — Prototype</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* Marks a field whose label is inferred rather than confirmed. */
+  .editme { font-size: 9px; letter-spacing: .04em; vertical-align: super; padding: 1px 3px;
+            border-radius: 3px; background: #fef3c7; color: #92400e; font-weight: 700; }
+  /* Horizontal scroll only ever appears inside a deliberately scrollable element. */
+  .noscroll { overflow-x: hidden; }
+  .timeline-dot { width: 10px; height: 10px; border-radius: 9999px; flex: none; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body class="h-full bg-slate-100 text-slate-900 antialiased noscroll">
+
+<!-- PROTOTYPE BANNER -->
+<div class="bg-amber-100 border-b border-amber-300 px-4 py-2 text-center text-xs text-amber-900">
+  <strong>Clickable prototype.</strong> No database, no build step. Switch roles and walk the
+  workflow. Fields marked
+  <span class="editme">EDIT ME</span>
+  are inferred and need confirming before the schema is migrated.
+</div>
+
+<!-- ===================== LOGIN ===================== -->
+<div id="screen-login" class="min-h-[calc(100vh-33px)] flex items-center justify-center p-4">
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-6">
+      <div class="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-white font-bold text-lg">IT</div>
+      <h1 class="mt-3 text-lg font-semibold">IT Request Management</h1>
+      <p class="text-sm text-slate-500">Sign in to continue</p>
+    </div>
+    <div class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+      <label class="block text-sm font-medium mb-1">Email</label>
+      <input type="email" value="ahmad.ali@example.com" class="mb-4 w-full rounded-lg border-slate-300 border px-3 py-2 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none">
+      <label class="block text-sm font-medium mb-1">Password</label>
+      <input type="password" value="demo-password" class="mb-5 w-full rounded-lg border-slate-300 border px-3 py-2 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none">
+      <button onclick="enterApp()" class="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">Sign in</button>
+      <p class="mt-4 text-xs text-slate-500">
+        Production uses Microsoft Entra ID single sign-on. This POC uses local accounts —
+        a declared deviation.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== APP SHELL ===================== -->
+<div id="app" class="hidden min-h-[calc(100vh-33px)]">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-30 border-b border-slate-200 bg-white">
+    <div class="flex items-center gap-3 px-4 py-3">
+      <button onclick="toggleNav()" class="lg:hidden -ml-1 rounded-lg p-2 hover:bg-slate-100" aria-label="Menu">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <div class="flex items-center gap-2">
+        <div class="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white text-xs font-bold">IT</div>
+        <span class="font-semibold text-sm sm:text-base">IT Request Management</span>
+      </div>
+      <div class="ml-auto flex items-center gap-2">
+        <label for="role" class="hidden sm:block text-xs text-slate-500">Viewing as</label>
+        <select id="role" onchange="setRole(this.value)"
+                class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium focus:border-indigo-500 outline-none">
+          <option value="requestor">Requestor</option>
+          <option value="owner">Project Owner</option>
+          <option value="sponsor">Project Sponsor</option>
+          <option value="governance">IT Governance Reviewer</option>
+          <option value="technical">Technical Reviewer</option>
+          <option value="hou">IT HOU / Consolidator</option>
+          <option value="committee">Committee Secretariat</option>
+          <option value="reports">Management / Reports</option>
+          <option value="admin">Administrator</option>
+          <option value="auditor">Auditor (read-only)</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <div class="flex">
+    <!-- Sidebar -->
+    <nav id="nav" class="hidden lg:block w-60 flex-none border-r border-slate-200 bg-white lg:sticky lg:top-[57px] lg:h-[calc(100vh-90px)] overflow-y-auto">
+      <ul id="nav-list" class="p-3 space-y-0.5 text-sm"></ul>
+      <div class="border-t border-slate-100 p-3">
+        <div class="rounded-lg bg-slate-50 p-3">
+          <p class="text-[11px] font-semibold text-slate-600">Scope</p>
+          <p id="scope-note" class="mt-1 text-[11px] leading-snug text-slate-500"></p>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main -->
+    <main class="min-w-0 flex-1 p-4 sm:p-6">
+
+      <!-- ---------- DASHBOARD ---------- -->
+      <section id="screen-dashboard" class="view">
+        <h2 class="text-xl font-semibold">Dashboard</h2>
+        <p id="dash-greeting" class="mt-1 text-sm text-slate-500"></p>
+
+        <div id="dash-cards" class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"></div>
+
+        <div class="mt-6 grid gap-6 xl:grid-cols-3">
+          <div class="xl:col-span-2 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <div class="flex items-center justify-between">
+              <h3 class="font-semibold">Needs attention</h3>
+              <span class="text-xs text-slate-500">Aging against due dates</span>
+            </div>
+            <div class="mt-4 overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th class="px-3 py-2 font-medium">Request</th>
+                    <th class="px-3 py-2 font-medium">Stage</th>
+                    <th class="px-3 py-2 font-medium whitespace-nowrap">Waiting on</th>
+                    <th class="px-3 py-2 font-medium whitespace-nowrap">Due</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <tr class="hover:bg-slate-50 cursor-pointer" onclick="go('detail')">
+                    <td class="px-3 py-2.5">
+                      <div class="font-medium">REQ-2026-0042</div>
+                      <div class="text-xs text-slate-500">ERP licence renewal</div>
+                    </td>
+                    <td class="px-3 py-2.5"><span class="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">Consolidation</span></td>
+                    <td class="px-3 py-2.5 text-slate-600">IT HOU</td>
+                    <td class="px-3 py-2.5"><span class="inline-flex items-center gap-1 text-xs font-medium text-amber-700">⏱ 2 days left</span></td>
+                  </tr>
+                  <tr class="hover:bg-slate-50 cursor-pointer" onclick="go('detail')">
+                    <td class="px-3 py-2.5">
+                      <div class="font-medium">REQ-2026-0039</div>
+                      <div class="text-xs text-slate-500">CRM enhancement — reporting</div>
+                    </td>
+                    <td class="px-3 py-2.5"><span class="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">Sponsor</span></td>
+                    <td class="px-3 py-2.5 text-slate-600">Tan Wei Ming</td>
+                    <td class="px-3 py-2.5"><span class="inline-flex items-center gap-1 text-xs font-semibold text-red-700">⚠ 1 day overdue</span></td>
+                  </tr>
+                  <tr class="hover:bg-slate-50 cursor-pointer" onclick="go('detail')">
+                    <td class="px-3 py-2.5">
+                      <div class="font-medium">REQ-2026-0036</div>
+                      <div class="text-xs text-slate-500">Tablet purchase — field team</div>
+                    </td>
+                    <td class="px-3 py-2.5"><span class="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">Technical review</span></td>
+                    <td class="px-3 py-2.5 text-slate-600">IT Platforms</td>
+                    <td class="px-3 py-2.5"><span class="inline-flex items-center gap-1 text-xs font-medium text-slate-600">3 days left</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h3 class="font-semibold">Recent activity</h3>
+            <ol class="mt-4 space-y-4">
+              <li class="flex gap-3">
+                <span class="timeline-dot mt-1.5 bg-emerald-500"></span>
+                <div>
+                  <p class="text-sm">Project Sponsor approved <span class="font-medium">REQ-2026-0042</span></p>
+                  <p class="text-xs text-slate-500">Tan Wei Ming · 22 Sep 2026, 4:15 pm</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <span class="timeline-dot mt-1.5 bg-indigo-500"></span>
+                <div>
+                  <p class="text-sm">Tier 2 and Enhancement assigned to <span class="font-medium">REQ-2026-0042</span></p>
+                  <p class="text-xs text-slate-500">Nurul Izzah · 22 Sep 2026, 11:02 am</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <span class="timeline-dot mt-1.5 bg-slate-300"></span>
+                <div>
+                  <p class="text-sm">IT Delivery &amp; Governance filed a recommendation on <span class="font-medium">REQ-2026-0042</span></p>
+                  <p class="text-xs text-slate-500">Raj Kumar · 23 Sep 2026, 9:40 am</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- MY REQUESTS ---------- -->
+      <section id="screen-list" class="view hidden">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-xl font-semibold">My Requests</h2>
+            <p class="mt-1 text-sm text-slate-500">Drafts, submissions and returned items.</p>
+          </div>
+          <button onclick="go('wizard')" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">New request</button>
+        </div>
+
+        <div class="mt-4 flex flex-wrap gap-2">
+          <input placeholder="Search number or title…" class="w-full sm:w-64 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+          <select class="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+            <option>All statuses</option><option>Draft</option><option>Pending</option><option>Returned</option><option>Closed</option>
+          </select>
+        </div>
+
+        <!-- Desktop table -->
+        <div class="mt-4 hidden md:block rounded-xl bg-white shadow-sm ring-1 ring-slate-200 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-4 py-2.5 font-medium">Request</th>
+                <th class="px-4 py-2.5 font-medium">Tier</th>
+                <th class="px-4 py-2.5 font-medium">Route</th>
+                <th class="px-4 py-2.5 font-medium">Status</th>
+                <th class="px-4 py-2.5 font-medium whitespace-nowrap">Submitted</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr class="hover:bg-slate-50 cursor-pointer" onclick="go('detail')">
+                <td class="px-4 py-3">
+                  <div class="font-medium">REQ-2026-0042</div>
+                  <div class="text-xs text-slate-500">ERP licence renewal</div>
+                </td>
+                <td class="px-4 py-3">Tier 2</td>
+                <td class="px-4 py-3">Full</td>
+                <td class="px-4 py-3"><span class="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">Consolidation</span></td>
+                <td class="px-4 py-3 text-slate-600 whitespace-nowrap">21 Sep 2026</td>
+              </tr>
+              <tr class="hover:bg-slate-50 cursor-pointer" onclick="go('detail')">
+                <td class="px-4 py-3">
+                  <div class="font-medium">REQ-2026-0031</div>
+                  <div class="text-xs text-slate-500">Firewall subscription</div>
+                </td>
+                <td class="px-4 py-3">Tier 1</td>
+                <td class="px-4 py-3">Light</td>
+                <td class="px-4 py-3"><span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Approved</span></td>
+                <td class="px-4 py-3 text-slate-600 whitespace-nowrap">8 Sep 2026</td>
+              </tr>
+              <tr class="hover:bg-slate-50 cursor-pointer" onclick="go('detail')">
+                <td class="px-4 py-3">
+                  <div class="font-medium">REQ-2026-0028</div>
+                  <div class="text-xs text-slate-500">Warehouse Wi-Fi expansion</div>
+                </td>
+                <td class="px-4 py-3">Tier P</td>
+                <td class="px-4 py-3">—</td>
+                <td class="px-4 py-3"><span class="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">Returned for amendment</span></td>
+                <td class="px-4 py-3 text-slate-600 whitespace-nowrap">2 Sep 2026</td>
+              </tr>
+              <tr class="hover:bg-slate-50 cursor-pointer" onclick="go('wizard')">
+                <td class="px-4 py-3">
+                  <div class="font-medium text-slate-500">Draft — no number yet</div>
+                  <div class="text-xs text-slate-500">Laptop refresh programme</div>
+                </td>
+                <td class="px-4 py-3 text-slate-400">—</td>
+                <td class="px-4 py-3 text-slate-400">—</td>
+                <td class="px-4 py-3"><span class="rounded-full border border-slate-300 px-2 py-0.5 text-xs font-medium text-slate-600">Draft</span></td>
+                <td class="px-4 py-3 text-slate-400 whitespace-nowrap">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Mobile cards -->
+        <div class="mt-4 space-y-3 md:hidden">
+          <div onclick="go('detail')" class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <p class="font-medium text-sm">REQ-2026-0042</p>
+                <p class="text-xs text-slate-500">ERP licence renewal</p>
+              </div>
+              <span class="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 whitespace-nowrap">Consolidation</span>
+            </div>
+            <dl class="mt-3 grid grid-cols-2 gap-y-1 text-xs">
+              <dt class="text-slate-500">Tier</dt><dd>Tier 2</dd>
+              <dt class="text-slate-500">Route</dt><dd>Full</dd>
+              <dt class="text-slate-500">Submitted</dt><dd>21 Sep 2026</dd>
+            </dl>
+          </div>
+          <div onclick="go('detail')" class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <p class="font-medium text-sm">REQ-2026-0039</p>
+                <p class="text-xs text-slate-500">CRM enhancement — reporting</p>
+              </div>
+              <span class="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 whitespace-nowrap">Sponsor</span>
+            </div>
+            <dl class="mt-3 grid grid-cols-2 gap-y-1 text-xs">
+              <dt class="text-slate-500">Tier</dt><dd>Tier 2</dd>
+              <dt class="text-slate-500">Route</dt><dd>—</dd>
+              <dt class="text-slate-500">Due</dt><dd class="font-semibold text-red-700">1 day overdue</dd>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- WIZARD ---------- -->
+      <section id="screen-wizard" class="view hidden">
+        <div class="max-w-3xl">
+          <h2 class="text-xl font-semibold">New Request</h2>
+          <p class="mt-1 text-sm text-slate-500">Section A — Document Information</p>
+
+          <!-- Sticky progress -->
+          <div class="sticky top-[57px] z-20 -mx-4 mt-4 border-b border-slate-200 bg-slate-100/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-lg sm:border sm:bg-white">
+            <div class="flex items-center gap-1.5">
+              <span class="h-1.5 flex-1 rounded-full bg-indigo-600"></span>
+              <span class="h-1.5 flex-1 rounded-full bg-slate-200"></span>
+              <span class="h-1.5 flex-1 rounded-full bg-slate-200"></span>
+              <span class="h-1.5 flex-1 rounded-full bg-slate-200"></span>
+              <span class="h-1.5 flex-1 rounded-full bg-slate-200"></span>
+            </div>
+            <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <p class="text-xs font-semibold text-slate-700">Step 1 of 5 · Request Information <span class="font-normal text-slate-400">(Section A)</span></p>
+              <p class="text-xs text-emerald-700">✓ Draft saved 12:04 pm</p>
+            </div>
+          </div>
+
+          <div class="mt-5 space-y-5">
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <h3 class="mb-4 text-sm font-semibold">Request</h3>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div class="sm:col-span-2">
+                  <label class="block text-sm font-medium mb-1">Title</label>
+                  <input value="ERP licence renewal — Finance module" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-1">Request date</label>
+                  <input type="date" value="2026-09-21" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-1">Requestor</label>
+                  <input value="Ahmad bin Ali" readonly class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                </div>
+              </div>
+              <p class="mt-3 text-xs text-slate-500">
+                Department and division are filled from the Microsoft 365 profile and may be
+                corrected by IT Governance. <span class="editme">EDIT ME</span>
+              </p>
+            </div>
+
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <h3 class="mb-4 text-sm font-semibold">Stakeholders</h3>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label class="block text-sm font-medium mb-1">Project Owner</label>
+                  <input value="Siti Nurhaliza binti Hassan" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+                  <p class="mt-1 text-xs text-slate-500">Approves first</p>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-1">Project Sponsor</label>
+                  <input value="Tan Wei Ming" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+                  <p class="mt-1 text-xs text-slate-500">Approves second</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <h3 class="mb-1 text-sm font-semibold">Assessment <span class="editme">EDIT ME</span></h3>
+              <p class="mb-4 text-xs text-slate-500">
+                You propose these. IT Governance confirms or changes them at Completeness Review —
+                both values are kept in the audit trail.
+              </p>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label class="block text-sm font-medium mb-1">Tier (proposed)</label>
+                  <select class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+                    <option>Tier 1</option><option selected>Tier 2</option><option>Tier P (Partnership)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-1">Classification (proposed)</label>
+                  <select class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+                    <option>New System</option><option selected>Enhancement</option><option>Subscription / License</option><option>Others</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-5 flex flex-wrap items-center justify-between gap-3 pb-6">
+            <button class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50">Save draft</button>
+            <div class="flex gap-2">
+              <button class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50">Back</button>
+              <button onclick="go('wizard2')" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Continue</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- WIZARD STEP 2 ---------- -->
+      <section id="screen-wizard2" class="view hidden">
+        <div class="max-w-3xl">
+          <h2 class="text-xl font-semibold">New Request</h2>
+          <p class="mt-1 text-sm text-slate-500">Section B — Request Details</p>
+
+          <div class="sticky top-[57px] z-20 -mx-4 mt-4 border-b border-slate-200 bg-slate-100/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-lg sm:border sm:bg-white">
+            <div class="flex items-center gap-1.5">
+              <span class="h-1.5 flex-1 rounded-full bg-indigo-600"></span>
+              <span class="h-1.5 flex-1 rounded-full bg-indigo-600"></span>
+              <span class="h-1.5 flex-1 rounded-full bg-slate-200"></span>
+              <span class="h-1.5 flex-1 rounded-full bg-slate-200"></span>
+              <span class="h-1.5 flex-1 rounded-full bg-slate-200"></span>
+            </div>
+            <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <p class="text-xs font-semibold text-slate-700">Step 2 of 5 · Business Justification <span class="font-normal text-slate-400">(Section B)</span></p>
+              <p class="text-xs text-emerald-700">✓ Draft saved 12:05 pm</p>
+            </div>
+          </div>
+
+          <div class="mt-5 space-y-5">
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <h3 class="mb-4 text-sm font-semibold">Business case</h3>
+              <label class="block text-sm font-medium mb-1">Business need</label>
+              <textarea rows="3" class="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">The Finance module licence expires 31 October 2026. Without renewal, finance reporting stops and month-end close is delayed.</textarea>
+
+              <!-- The one genuinely conditional block (BR-003) -->
+              <div class="rounded-lg border border-indigo-100 bg-indigo-50/50 p-4">
+                <label class="block text-sm font-medium mb-2">Does this align to an approved business plan?</label>
+                <div class="flex gap-4 text-sm">
+                  <label class="flex items-center gap-2"><input type="radio" name="bp" checked onchange="bp(true)"> Yes</label>
+                  <label class="flex items-center gap-2"><input type="radio" name="bp" onchange="bp(false)"> No — ad-hoc</label>
+                </div>
+
+                <div id="bp-ref" class="mt-4">
+                  <label class="block text-sm font-medium mb-1">Business plan reference</label>
+                  <input value="BP-2026-FIN-004" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+                  <p class="mt-1 text-xs text-slate-500">Required when the request aligns to a plan.</p>
+                </div>
+
+                <div id="bp-adhoc" class="mt-4 hidden">
+                  <label class="block text-sm font-medium mb-1">Ad-hoc justification</label>
+                  <textarea rows="3" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500" placeholder="Why this cannot wait for the next planning cycle"></textarea>
+                  <p class="mt-1 text-xs text-slate-500">Required when there is no plan to cite.</p>
+                </div>
+              </div>
+
+              <div class="mt-4">
+                <label class="block text-sm font-medium mb-1">Value proposition</label>
+                <textarea rows="2" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">Retains continuous month-end reporting; avoids an estimated 12 days of manual work per year.</textarea>
+              </div>
+            </div>
+
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <h3 class="mb-4 text-sm font-semibold">Assessed by IT Governance</h3>
+              <dl class="grid gap-y-2 text-sm sm:grid-cols-2">
+                <dt class="text-slate-500">Tier (proposed)</dt><dd>Tier 2</dd>
+                <dt class="text-slate-500">Classification (proposed)</dt><dd>Enhancement</dd>
+                <dt class="text-slate-500">Governance route</dt>
+                <dd class="text-slate-400">
+                  Not set yet — determined at consolidation, after recommendations
+                </dd>
+              </dl>
+              <p class="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+                <strong>Note:</strong> the governance route is decided by IT HOU after the
+                technical units have filed their recommendations. It is not chosen at submission.
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-5 flex flex-wrap items-center justify-between gap-3 pb-6">
+            <button class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50">Save draft</button>
+            <div class="flex gap-2">
+              <button onclick="go('wizard')" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50">Back</button>
+              <button onclick="go('list')" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Continue</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- REQUEST DETAIL ---------- -->
+      <section id="screen-detail" class="view hidden">
+        <button onclick="go('list')" class="mb-3 text-sm text-slate-500 hover:text-slate-900">← Back to requests</button>
+
+        <div class="grid gap-6 lg:grid-cols-3">
+          <!-- Left column -->
+          <div class="lg:col-span-2 space-y-6 min-w-0">
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p class="font-mono text-xs text-slate-500">REQ-2026-0042</p>
+                  <h2 class="mt-1 text-lg font-semibold">ERP licence renewal — Finance module</h2>
+                </div>
+                <span class="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">Pending Consolidation</span>
+              </div>
+
+              <dl class="mt-5 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+                <div><dt class="text-xs text-slate-500">Requestor</dt><dd>Ahmad bin Ali</dd></div>
+                <div><dt class="text-xs text-slate-500">Department / Division</dt><dd>IT · Infrastructure</dd></div>
+                <div><dt class="text-xs text-slate-500">Project Owner</dt><dd>Siti Nurhaliza binti Hassan</dd></div>
+                <div><dt class="text-xs text-slate-500">Project Sponsor</dt><dd>Tan Wei Ming</dd></div>
+                <div>
+                  <dt class="text-xs text-slate-500">Tier</dt>
+                  <dd>Tier 2 <span class="text-xs text-slate-400">(proposed Tier 2)</span></dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-500">Classification</dt>
+                  <dd>Enhancement <span class="text-xs text-slate-400">(proposed Enhancement)</span></dd>
+                </div>
+                <div><dt class="text-xs text-slate-500">Governance route</dt><dd class="font-medium">Full</dd></div>
+                <div><dt class="text-xs text-slate-500">Submitted</dt><dd>21 Sep 2026</dd></div>
+              </dl>
+            </div>
+
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <h3 class="mb-4 text-sm font-semibold">Request details <span class="text-xs font-normal text-slate-400">(Section B)</span></h3>
+              <dl class="space-y-3 text-sm">
+                <div><dt class="text-xs text-slate-500">Business need</dt><dd>The Finance module licence expires 31 October 2026…</dd></div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <div><dt class="text-xs text-slate-500">Budget amount</dt><dd>RM 45,000.00</dd></div>
+                  <div><dt class="text-xs text-slate-500">Funding type <span class="editme">EDIT ME</span></dt><dd>Operating expenditure</dd></div>
+                  <div><dt class="text-xs text-slate-500">Budget source</dt><dd>IT Operating</dd></div>
+                  <div><dt class="text-xs text-slate-500">Budget code</dt><dd>IT-OP-2210</dd></div>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-500">Urgency</dt>
+                  <dd>
+                    High — licence expires 31 Oct
+                    <span class="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">shown to approvers only; does not change due dates</span>
+                  </dd>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <div><dt class="text-xs text-slate-500">Proposed start</dt><dd>1 Oct 2026</dd></div>
+                  <div><dt class="text-xs text-slate-500">Target completion</dt><dd>31 Oct 2026</dd></div>
+                </div>
+              </dl>
+            </div>
+
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-semibold">Recommendations</h3>
+                <span class="text-xs text-slate-500">3 units · parallel</span>
+              </div>
+              <p class="mt-1 text-xs text-slate-500">Each unit files independently and never overwrites another.</p>
+
+              <ul class="mt-4 space-y-3">
+                <li class="rounded-lg border border-slate-200 p-4">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <p class="text-sm font-medium">IT Operations</p>
+                    <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Recommended with conditions</span>
+                  </div>
+                  <p class="mt-2 text-sm text-slate-600">Renewal is required before 31 Oct. Negotiate a 3-year term for a better rate.</p>
+                  <p class="mt-2 text-xs text-slate-500">Raj Kumar · 23 Sep 2026, 9:40 am · v1</p>
+                </li>
+                <li class="rounded-lg border border-slate-200 p-4">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <p class="text-sm font-medium">IT Platforms</p>
+                    <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Recommended</span>
+                  </div>
+                  <p class="mt-2 text-sm text-slate-600">No infrastructure impact. Existing infrastructure supports the current version.</p>
+                  <p class="mt-2 text-xs text-slate-500">Lim Chee Keong · 23 Sep 2026, 2:10 pm · v1</p>
+                </li>
+                <li class="rounded-lg border border-slate-200 p-4">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <p class="text-sm font-medium">IT Delivery &amp; Governance</p>
+                    <span class="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Not recommended</span>
+                  </div>
+                  <p class="mt-2 text-sm text-slate-600">Two competing modules are under evaluation. Recommend deferring pending that review.</p>
+                  <p class="mt-2 text-xs text-slate-500">Aisyah Rahman · 24 Sep 2026, 8:15 am · v2
+                    <button class="ml-1 text-indigo-600 underline">view v1</button>
+                  </p>
+                </li>
+              </ul>
+
+              <p class="mt-4 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
+                <strong>Dissent is preserved, not smoothed over.</strong> One unit disagrees, and the
+                committee sees that alongside the majority view. A single "recommendation" field
+                would have lost this.
+              </p>
+            </div>
+
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <h3 class="text-sm font-semibold">Comments</h3>
+              <ul class="mt-4 space-y-4">
+                <li>
+                  <div class="flex items-center gap-2">
+                    <p class="text-sm font-medium">Ahmad bin Ali</p>
+                    <span class="text-xs text-slate-500">24 Sep 2026, 10:02 am</span>
+                  </div>
+                  <p class="mt-1 text-sm text-slate-700">Happy to join the committee session if that helps.</p>
+                </li>
+                <li class="rounded-lg border-l-2 border-amber-400 bg-amber-50/60 p-3">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <p class="text-sm font-medium">Nurul Izzah</p>
+                    <span class="rounded bg-amber-200 px-1.5 py-0.5 text-[11px] font-semibold text-amber-900">INTERNAL</span>
+                    <span class="text-xs text-slate-500">24 Sep 2026, 11:20 am</span>
+                  </div>
+                  <p class="mt-1 text-sm text-amber-900">Sponsor approval was 2 days late. Flagged for the aging report.</p>
+                  <p class="mt-1 text-xs text-amber-800">Visible to governance only — never to the requestor.</p>
+                </li>
+              </ul>
+              <div class="mt-4 flex gap-2">
+                <input placeholder="Add a comment…" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+                <button class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white">Post</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right column -->
+          <aside class="space-y-6">
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <h3 class="text-sm font-semibold">Status timeline</h3>
+              <ol class="mt-4">
+                <li class="flex gap-3 pb-5">
+                  <span class="timeline-dot mt-1.5 bg-emerald-500"></span>
+                  <div><p class="text-sm font-medium">Submitted</p><p class="text-xs text-slate-500">21 Sep, 9:12 am</p></div>
+                </li>
+                <li class="flex gap-3 pb-5">
+                  <span class="timeline-dot mt-1.5 bg-emerald-500"></span>
+                  <div><p class="text-sm font-medium">Project Owner approved</p><p class="text-xs text-slate-500">Siti Nurhaliza · 21 Sep, 3:00 pm</p></div>
+                </li>
+                <li class="flex gap-3 pb-5">
+                  <span class="timeline-dot mt-1.5 bg-emerald-500"></span>
+                  <div><p class="text-sm font-medium">Project Sponsor approved</p><p class="text-xs text-slate-500">Tan Wei Ming · 22 Sep, 4:15 pm</p></div>
+                </li>
+                <li class="flex gap-3 pb-5">
+                  <span class="timeline-dot mt-1.5 bg-emerald-500"></span>
+                  <div><p class="text-sm font-medium">Completeness review</p><p class="text-xs text-slate-500">Nurul Izzah · 22 Sep, 11:02 am</p></div>
+                </li>
+                <li class="flex gap-3 pb-5">
+                  <span class="timeline-dot mt-1.5 bg-indigo-500 ring-4 ring-indigo-100"></span>
+                  <div>
+                    <p class="text-sm font-semibold text-indigo-700">Pending consolidation</p>
+                    <p class="text-xs text-slate-500">Current · awaiting IT HOU</p>
+                  </div>
+                </li>
+                <li class="flex gap-3 pb-5 opacity-40">
+                  <span class="timeline-dot mt-1.5 bg-slate-300"></span>
+                  <div><p class="text-sm">Committee decision</p><p class="text-xs text-slate-500">Route is Full</p></div>
+                </li>
+                <li class="flex gap-3 opacity-40">
+                  <span class="timeline-dot mt-1.5 bg-slate-300"></span>
+                  <div><p class="text-sm">Closed</p></div>
+                </li>
+              </ol>
+            </div>
+
+            <div class="rounded-xl border border-amber-200 bg-amber-50 p-5">
+              <h3 class="text-sm font-semibold text-amber-900">Next action</h3>
+              <p class="mt-1 text-sm text-amber-900">Consolidate recommendations and set the governance route.</p>
+              <p class="mt-2 text-xs font-semibold text-amber-800">Due 26 Sep 2026 · 2 days left</p>
+            </div>
+
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <h3 class="text-sm font-semibold">Documents</h3>
+              <ul class="mt-3 space-y-2 text-sm">
+                <li class="flex items-center justify-between gap-2">
+                  <a href="#" class="truncate text-indigo-600 hover:underline">Vendor-quotation.pdf</a>
+                  <span class="text-xs text-slate-400 whitespace-nowrap">420 KB</span>
+                </li>
+                <li class="flex items-center justify-between gap-2">
+                  <a href="#" class="truncate text-indigo-600 hover:underline">Risk-assessment.pdf</a>
+                  <span class="text-xs text-slate-400 whitespace-nowrap">180 KB</span>
+                </li>
+                <li class="flex items-center justify-between gap-2">
+                  <a href="#" class="truncate text-indigo-600 hover:underline">Business-plan-extract.pdf</a>
+                  <span class="text-xs text-slate-400 whitespace-nowrap">96 KB</span>
+                </li>
+              </ul>
+              <p class="mt-3 text-xs text-slate-500">Stored privately; access is authorised and audited.</p>
+            </div>
+
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <h3 class="text-sm font-semibold">Audit history</h3>
+              <p class="mt-1 text-xs text-slate-500">Every material action, with actor and timestamp.</p>
+              <ul class="mt-3 space-y-2 text-xs text-slate-600">
+                <li><span class="font-medium text-slate-800">24 Sep 11:20</span> · Nurul Izzah added an internal comment</li>
+                <li><span class="font-medium text-slate-800">24 Sep 08:15</span> · Aisyah Rahman revised a recommendation (v2)</li>
+                <li><span class="font-medium text-slate-800">22 Sep 11:02</span> · Nurul Izzah assigned Tier 2 / Enhancement</li>
+                <li><span class="font-medium text-slate-800">22 Sep 11:02</span> · Classification changed from Subscription to Enhancement</li>
+                <li><span class="font-medium text-slate-800">21 Sep 15:00</span> · Siti Nurhaliza approved</li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ---------- MY APPROVALS ---------- -->
+      <section id="screen-approvals" class="view hidden">
+        <h2 class="text-xl font-semibold">My Approvals</h2>
+        <p class="mt-1 text-sm text-slate-500">Requests awaiting your decision.</p>
+
+        <div class="mt-4 flex flex-wrap gap-3">
+          <div class="rounded-xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
+            <p class="text-xs text-slate-500">Awaiting you</p><p class="text-lg font-semibold">3</p>
+          </div>
+          <div class="rounded-xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
+            <p class="text-xs text-slate-500">Overdue</p><p class="text-lg font-semibold text-red-700">1</p>
+          </div>
+          <div class="rounded-xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
+            <p class="text-xs text-slate-500">Acting as delegate</p><p class="text-lg font-semibold">1</p>
+          </div>
+        </div>
+
+        <div class="mt-5 space-y-4">
+          <article class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p class="font-mono text-xs text-slate-500">REQ-2026-0039</p>
+                <h3 class="mt-1 font-semibold">CRM enhancement — reporting module</h3>
+                <p class="mt-1 text-sm text-slate-500">Ahmad bin Ali · IT · Infrastructure</p>
+              </div>
+              <span class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-700">⚠ 1 day overdue</span>
+            </div>
+            <dl class="mt-4 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+              <div><dt class="text-xs text-slate-500">Tier</dt><dd>Tier 2</dd></div>
+              <div><dt class="text-xs text-slate-500">Classification</dt><dd>Enhancement</dd></div>
+              <div><dt class="text-xs text-slate-500">Budget</dt><dd>RM 18,500</dd></div>
+            </dl>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <button class="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Approve</button>
+              <button class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50">Return for amendment</button>
+              <button class="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50">Reject</button>
+              <button onclick="go('detail')" class="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100">Open</button>
+            </div>
+          </article>
+
+          <article class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p class="font-mono text-xs text-slate-500">REQ-2026-0044</p>
+                <h3 class="mt-1 font-semibold">Security awareness training platform</h3>
+                <p class="mt-1 text-sm text-slate-500">Fatimah binti Osman · Operations · Support</p>
+              </div>
+              <span class="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">Due in 2 days</span>
+            </div>
+            <p class="mt-3 rounded-lg bg-indigo-50 p-3 text-xs text-indigo-900">
+              <strong>Acting as delegate.</strong> You are deciding on behalf of Siti Nurhaliza,
+              who is on leave until 30 Sep. Both names are recorded.
+            </p>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <button class="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Approve</button>
+              <button class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50">Return for amendment</button>
+              <button class="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50">Reject</button>
+            </div>
+          </article>
+        </div>
+
+        <div class="mt-6 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <h3 class="text-sm font-semibold">Delegate my approvals</h3>
+          <p class="mt-1 text-xs text-slate-500">
+            If you will be away, nominate someone to act for you until a set date. Requests never
+            stall waiting for one person.
+          </p>
+          <div class="mt-3 grid gap-3 sm:grid-cols-3">
+            <input placeholder="Delegate" class="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+            <input type="date" class="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+            <button class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white">Set delegation</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- GOVERNANCE ---------- -->
+      <section id="screen-governance" class="view hidden">
+        <h2 class="text-xl font-semibold">Governance Workspace</h2>
+        <p class="mt-1 text-sm text-slate-500">Completeness, tier, classification, consolidation.</p>
+
+        <div class="mt-5 grid gap-6 lg:grid-cols-2">
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h3 class="text-sm font-semibold">Awaiting completeness review</h3>
+            <div class="mt-3 divide-y divide-slate-100">
+              <div class="py-3">
+                <p class="font-mono text-xs text-slate-500">REQ-2026-0045</p>
+                <p class="text-sm font-medium">Data centre UPS replacement</p>
+                <p class="text-xs text-slate-500">Michael Tan · 24 Sep</p>
+              </div>
+              <div class="py-3">
+                <p class="font-mono text-xs text-slate-500">REQ-2026-0046</p>
+                <p class="text-sm font-medium">HR onboarding workflow</p>
+                <p class="text-xs text-slate-500">Priya Devi · 24 Sep</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h3 class="text-sm font-semibold">Assessment — REQ-2026-0045</h3>
+            <div class="mt-4 space-y-4">
+              <div>
+                <label class="block text-sm font-medium mb-1">Tier</label>
+                <select class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+                  <option>Tier 1</option><option selected>Tier 2</option><option>Tier P (Partnership)</option>
+                </select>
+                <p class="mt-1 text-xs text-slate-500">Requestor proposed: Tier 2</p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1">Classification</label>
+                <select class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+                  <option>New System</option><option>Enhancement</option><option>Subscription / License</option><option selected>Others</option>
+                </select>
+                <p class="mt-1 text-xs text-slate-500">Requestor proposed: Subscription / License — changed</p>
+              </div>
+              <div class="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+                <strong>Recommendation requests will go to:</strong> IT Operations, IT Platforms,
+                IT Delivery &amp; Governance.
+                <span class="editme">EDIT ME</span> — the real mapping by classification is unconfirmed.
+                It is configuration, so this is a data change, not a code change.
+              </div>
+              <button class="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Assign and request recommendations</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <h3 class="text-sm font-semibold">Awaiting consolidation</h3>
+          <p class="mt-1 text-xs text-slate-500">
+            All assigned units have filed. Consolidate and set the governance route.
+          </p>
+
+          <div class="mt-4 rounded-lg border border-slate-200 p-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p class="font-mono text-xs text-slate-500">REQ-2026-0042</p>
+                <p class="text-sm font-medium">ERP licence renewal — Finance module</p>
+              </div>
+              <span class="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">Due in 2 days</span>
+            </div>
+
+            <div class="mt-4 grid gap-2 text-sm sm:grid-cols-3">
+              <div class="rounded-lg bg-emerald-50 p-3">
+                <p class="text-xs font-medium text-emerald-800">IT Operations</p>
+                <p class="mt-0.5 text-xs text-emerald-700">Recommended with conditions</p>
+              </div>
+              <div class="rounded-lg bg-emerald-50 p-3">
+                <p class="text-xs font-medium text-emerald-800">IT Platforms</p>
+                <p class="mt-0.5 text-xs text-emerald-700">Recommended</p>
+              </div>
+              <div class="rounded-lg bg-red-50 p-3">
+                <p class="text-xs font-medium text-red-800">IT Delivery &amp; Governance</p>
+                <p class="mt-0.5 text-xs text-red-700">Not recommended</p>
+              </div>
+            </div>
+
+            <div class="mt-4">
+              <label class="block text-sm font-medium mb-1">Consolidation summary</label>
+              <textarea rows="2" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">Two units support renewal, one recommends deferral pending the module review. Given the licence expiry, renewal is recommended with the condition that the 3-year term is negotiated.</textarea>
+            </div>
+
+            <div class="mt-4">
+              <label class="block text-sm font-medium mb-1">Governance route</label>
+              <div class="flex flex-wrap gap-4 text-sm">
+                <label class="flex items-center gap-2"><input type="radio" name="route"> Light</label>
+                <label class="flex items-center gap-2"><input type="radio" name="route"> Moderate</label>
+                <label class="flex items-center gap-2"><input type="radio" name="route" checked> Full — requires committee</label>
+              </div>
+              <p class="mt-2 text-xs text-slate-500">
+                The route is decided here, after the recommendations — not chosen at submission.
+                Light and Moderate complete without a committee.
+              </p>
+            </div>
+
+            <button class="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Record consolidation</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- RECOMMENDATIONS ---------- -->
+      <section id="screen-recommendations" class="view hidden">
+        <h2 class="text-xl font-semibold">Recommendations</h2>
+        <p class="mt-1 text-sm text-slate-500">Technical review assignments for IT Operations.</p>
+
+        <div class="mt-5 grid gap-6 lg:grid-cols-2">
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h3 class="text-sm font-semibold">New assignments</h3>
+            <div class="mt-3 space-y-3">
+              <div class="rounded-lg border border-slate-200 p-4">
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p class="font-mono text-xs text-slate-500">REQ-2026-0045</p>
+                    <p class="text-sm font-medium">Data centre UPS replacement</p>
+                  </div>
+                  <span class="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">Due in 4 days</span>
+                </div>
+                <button onclick="go('recform')" class="mt-3 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">File recommendation</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h3 class="text-sm font-semibold">Submitted by you</h3>
+            <div class="mt-3 rounded-lg border border-slate-200 p-4">
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p class="font-mono text-xs text-slate-500">REQ-2026-0042</p>
+                  <p class="text-sm font-medium">ERP licence renewal</p>
+                </div>
+                <span class="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">v1 · 23 Sep</span>
+              </div>
+              <p class="mt-2 text-sm text-slate-600">Recommended with conditions</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- RECOMMENDATION FORM ---------- -->
+      <section id="screen-recform" class="view hidden">
+        <button onclick="go('recommendations')" class="mb-3 text-sm text-slate-500 hover:text-slate-900">← Back</button>
+        <div class="max-w-2xl">
+          <h2 class="text-xl font-semibold">File recommendation</h2>
+          <p class="mt-1 text-sm text-slate-500">REQ-2026-0045 · Data centre UPS replacement</p>
+
+          <div class="mt-5 space-y-5">
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <label class="block text-sm font-medium mb-2">Your unit's position</label>
+              <div class="space-y-2 text-sm">
+                <label class="flex items-center gap-2"><input type="radio" name="rec"> Recommended</label>
+                <label class="flex items-center gap-2"><input type="radio" name="rec" checked> Recommended with conditions</label>
+                <label class="flex items-center gap-2"><input type="radio" name="rec"> Not recommended</label>
+              </div>
+            </div>
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <label class="block text-sm font-medium mb-1">Conditions</label>
+              <textarea rows="3" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500" placeholder="What must be true for your unit to support this"></textarea>
+              <label class="mt-4 block text-sm font-medium mb-1">Supporting evidence</label>
+              <textarea rows="2" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500" placeholder="Reference, assessment or figure"></textarea>
+              <p class="mt-3 text-xs text-slate-500">
+                Submitting again creates a new version. Earlier versions are never overwritten,
+                so the committee sees how your position developed.
+              </p>
+            </div>
+            <div class="flex justify-end gap-2 pb-6">
+              <button onclick="go('recommendations')" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50">Cancel</button>
+              <button onclick="go('recommendations')" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Submit recommendation</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- COMMITTEE ---------- -->
+      <section id="screen-committee" class="view hidden">
+        <h2 class="text-xl font-semibold">Committee Workspace</h2>
+        <p class="mt-1 text-sm text-slate-500">IT Investment Committee — Full-route requests only.</p>
+
+        <div class="mt-5 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="font-mono text-xs text-slate-500">REQ-2026-0042</p>
+              <h3 class="mt-1 font-semibold">ERP licence renewal — Finance module</h3>
+            </div>
+            <span class="rounded-full bg-purple-50 px-2.5 py-0.5 text-xs font-semibold text-purple-700">Pending committee decision</span>
+          </div>
+
+          <div class="mt-4 grid gap-4 sm:grid-cols-3 text-sm">
+            <div><dt class="text-xs text-slate-500">Budget</dt><dd class="font-medium">RM 45,000.00</dd></div>
+            <div><dt class="text-xs text-slate-500">Tier</dt><dd class="font-medium">Tier 2</dd></div>
+            <div><dt class="text-xs text-slate-500">Classification</dt><dd class="font-medium">Enhancement</dd></div>
+          </div>
+
+          <div class="mt-4 rounded-lg bg-slate-50 p-4">
+            <p class="text-xs font-semibold text-slate-700">Consolidated recommendation</p>
+            <p class="mt-1 text-sm text-slate-600">Two units support renewal, one recommends deferral pending the module review. Renewal recommended with a condition to negotiate the 3-year term.</p>
+          </div>
+
+          <div class="mt-5">
+            <label class="block text-sm font-medium mb-2">Decision</label>
+            <div class="space-y-2 text-sm">
+              <label class="flex items-center gap-2"><input type="radio" name="cd"> Approved</label>
+              <label class="flex items-center gap-2"><input type="radio" name="cd" checked> Approved with conditions</label>
+              <label class="flex items-center gap-2"><input type="radio" name="cd"> Not recommended</label>
+              <label class="flex items-center gap-2"><input type="radio" name="cd"> Return for amendment</label>
+            </div>
+            <label class="mt-4 block text-sm font-medium mb-1">Conditions</label>
+            <textarea rows="2" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">3-year term to be negotiated; saving to be reported at the next committee.</textarea>
+          </div>
+
+          <div class="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+            The decision is recorded. Motions, voting and quorum are not part of this POC —
+            the committee operating model is an open question in the brief's Appendix C.
+          </div>
+
+          <button class="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Record decision</button>
+        </div>
+      </section>
+
+      <!-- ---------- REPORTS ---------- -->
+      <section id="screen-reports" class="view hidden">
+        <h2 class="text-xl font-semibold">Reports</h2>
+        <p class="mt-1 text-sm text-slate-500">Workload, aging, turnaround and outcomes.</p>
+
+        <div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <p class="text-xs text-slate-500">Open requests</p>
+            <p class="mt-1 text-2xl font-semibold">23</p>
+            <p class="mt-1 text-xs text-slate-500">6 awaiting a decision</p>
+          </div>
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <p class="text-xs text-slate-500">Overdue tasks</p>
+            <p class="mt-1 text-2xl font-semibold text-red-700">4</p>
+            <p class="mt-1 text-xs text-slate-500">2 escalated this week</p>
+          </div>
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <p class="text-xs text-slate-500">Median turnaround</p>
+            <p class="mt-1 text-2xl font-semibold">14 days</p>
+            <p class="mt-1 text-xs text-slate-500">Target 16 business days</p>
+          </div>
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <p class="text-xs text-slate-500">SLA compliance</p>
+            <p class="mt-1 text-2xl font-semibold text-emerald-700">83%</p>
+            <p class="mt-1 text-xs text-slate-500">Stages decided within target</p>
+          </div>
+        </div>
+
+        <div class="mt-6 grid gap-6 lg:grid-cols-2">
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h3 class="text-sm font-semibold">By stage</h3>
+            <p class="mt-1 text-xs text-slate-500">Where requests currently sit</p>
+            <ul class="mt-4 space-y-3 text-sm">
+              <li>
+                <div class="flex justify-between"><span>Project Owner</span><span class="text-slate-500">5</span></div>
+                <div class="mt-1 h-2 rounded-full bg-slate-100"><div class="h-2 rounded-full bg-indigo-500" style="width:45%"></div></div>
+              </li>
+              <li>
+                <div class="flex justify-between"><span>Project Sponsor</span><span class="text-slate-500">3</span></div>
+                <div class="mt-1 h-2 rounded-full bg-slate-100"><div class="h-2 rounded-full bg-indigo-500" style="width:27%"></div></div>
+              </li>
+              <li>
+                <div class="flex justify-between"><span>Technical recommendation</span><span class="text-slate-500">6</span></div>
+                <div class="mt-1 h-2 rounded-full bg-slate-100"><div class="h-2 rounded-full bg-indigo-500" style="width:55%"></div></div>
+              </li>
+              <li>
+                <div class="flex justify-between"><span>Consolidation</span><span class="text-slate-500">2</span></div>
+                <div class="mt-1 h-2 rounded-full bg-slate-100"><div class="h-2 rounded-full bg-indigo-500" style="width:18%"></div></div>
+              </li>
+              <li>
+                <div class="flex justify-between"><span>Committee</span><span class="text-slate-500">3</span></div>
+                <div class="mt-1 h-2 rounded-full bg-slate-100"><div class="h-2 rounded-full bg-amber-500" style="width:27%"></div></div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h3 class="text-sm font-semibold">Outcomes</h3>
+            <p class="mt-1 text-xs text-slate-500">Decisions in the last 12 months</p>
+            <ul class="mt-4 space-y-3 text-sm">
+              <li class="flex items-center justify-between"><span>Approved</span><span class="font-medium text-emerald-700">31</span></li>
+              <li class="flex items-center justify-between"><span>Approved with conditions</span><span class="font-medium text-emerald-700">9</span></li>
+              <li class="flex items-center justify-between"><span>Not recommended</span><span class="font-medium text-red-700">7</span></li>
+              <li class="flex items-center justify-between"><span>Withdrawn</span><span class="font-medium text-slate-600">4</span></li>
+            </ul>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <button class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50">Export CSV</button>
+              <button class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50">Export PDF</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- ADMIN: REFERENCE DATA ---------- -->
+      <section id="screen-admin" class="view hidden">
+        <h2 class="text-xl font-semibold">Administration — Reference Data</h2>
+        <p class="mt-1 text-sm text-slate-500">Tiers, classifications, governance routes, review units.</p>
+
+        <div class="mt-5 grid gap-6 lg:grid-cols-2">
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h3 class="text-sm font-semibold">Tiers</h3>
+            <ul class="mt-3 divide-y divide-slate-100 text-sm">
+              <li class="flex items-center justify-between py-2"><span>Tier 1</span><button class="text-xs text-indigo-600 hover:underline">Edit</button></li>
+              <li class="flex items-center justify-between py-2"><span>Tier 2</span><button class="text-xs text-indigo-600 hover:underline">Edit</button></li>
+              <li class="flex items-center justify-between py-2"><span>Tier P (Partnership)</span><button class="text-xs text-indigo-600 hover:underline">Edit</button></li>
+            </ul>
+            <p class="mt-3 text-xs text-slate-500">
+              The current SharePoint list allows free-typed values. This list is enforced, so
+              routing and reporting stay reliable.
+            </p>
+          </div>
+
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h3 class="text-sm font-semibold">Classifications</h3>
+            <ul class="mt-3 divide-y divide-slate-100 text-sm">
+              <li class="flex items-center justify-between py-2"><span>New System</span><button class="text-xs text-indigo-600 hover:underline">Edit</button></li>
+              <li class="flex items-center justify-between py-2"><span>Enhancement</span><button class="text-xs text-indigo-600 hover:underline">Edit</button></li>
+              <li class="flex items-center justify-between py-2"><span>Subscription / License</span><button class="text-xs text-indigo-600 hover:underline">Edit</button></li>
+              <li class="flex items-center justify-between py-2"><span>Others</span><button class="text-xs text-indigo-600 hover:underline">Edit</button></li>
+            </ul>
+            <p class="mt-3 text-xs text-slate-500">
+              "Others" is a real category, not an escape hatch — for example equipment bought
+              for a specific project.
+            </p>
+          </div>
+
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h3 class="text-sm font-semibold">Governance routes</h3>
+            <ul class="mt-3 divide-y divide-slate-100 text-sm">
+              <li class="flex items-center justify-between py-2"><span>Light</span><span class="text-xs text-slate-500">No committee</span></li>
+              <li class="flex items-center justify-between py-2"><span>Moderate</span><span class="text-xs text-slate-500">No committee</span></li>
+              <li class="flex items-center justify-between py-2"><span>Full</span><span class="text-xs font-medium text-purple-700">Requires committee</span></li>
+            </ul>
+          </div>
+
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h3 class="text-sm font-semibold">Review units by classification</h3>
+            <p class="mt-1 text-xs text-slate-500">
+              Which units must review a request. Configuration, not code.
+              <span class="editme">EDIT ME</span>
+            </p>
+            <div class="mt-3 overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr><th class="px-3 py-2 font-medium">Classification</th><th class="px-3 py-2 font-medium">Units</th></tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <tr><td class="px-3 py-2">New System</td><td class="px-3 py-2 text-slate-600">Operations, Platforms, Delivery</td></tr>
+                  <tr><td class="px-3 py-2">Enhancement</td><td class="px-3 py-2 text-slate-600">Operations, Platforms, Delivery</td></tr>
+                  <tr><td class="px-3 py-2">Subscription / License</td><td class="px-3 py-2 text-slate-600">Operations, Platforms, Delivery</td></tr>
+                  <tr><td class="px-3 py-2">Others</td><td class="px-3 py-2 text-slate-600">Operations, Platforms, Delivery</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- ADMIN: SLA & HOLIDAYS ---------- -->
+      <section id="screen-settings" class="view hidden">
+        <h2 class="text-xl font-semibold">Administration — Due Dates and Calendar</h2>
+        <p class="mt-1 text-sm text-slate-500">Per-stage targets and the holiday calendar.</p>
+
+        <div class="mt-5 grid gap-6 lg:grid-cols-2">
+          <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h3 class="text-sm font-semibold">Stage targets</h3>
+            <p class="mt-1 text-xs text-slate-500">In business days, using the calendar to the right.</p>
+            <div class="mt-3 overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr><th class="px-3 py-2 font-medium">Stage</th><th class="px-3 py-2 font-medium">Business days</th></tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <tr><td class="px-3 py-2">Project Owner</td><td class="px-3 py-2"><input value="3" class="w-16 rounded border border-slate-300 px-2 py-1 text-sm"></td></tr>
+                  <tr><td class="px-3 py-2">Project Sponsor</td><td class="px-3 py-2"><input value="3" class="w-16 rounded border border-slate-300 px-2 py-1 text-sm"></td></tr>
+                  <tr><td class="px-3 py-2">Completeness review</td><td class="px-3 py-2"><input value="2" class="w-16 rounded border border-slate-300 px-2 py-1 text-sm"></td></tr>
+                  <tr><td class="px-3 py-2">Technical recommendation</td><td class="px-3 py-2"><input value="5" class="w-16 rounded border border-slate-300 px-2 py-1 text-sm"></td></tr>
+                  <tr><td class="px-3 py-2">Consolidation</td><td class="px-3 py-2"><input value="3" class="w-16 rounded border border-slate-300 px-2 py-1 text-sm"></td></tr>
+                  <tr><td class="px-3 py-2">Committee decision</td><td class="px-3 py-2"><input value="10" class="w-16 rounded border border-slate-300 px-2 py-1 text-sm"></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="mt-3 text-xs text-slate-500">
+              The committee gets 10 days because it meets periodically — a 3-day target would
+              escalate something nobody can act on faster.
+            </p>
+          </div>
+
+          <div class="space-y-6">
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <h3 class="text-sm font-semibold">Business hours</h3>
+              <dl class="mt-3 grid gap-y-2 text-sm sm:grid-cols-2">
+                <dt class="text-slate-500">Working days</dt><dd>Monday to Friday</dd>
+                <dt class="text-slate-500">Open</dt><dd>09:00 – 18:00</dd>
+                <dt class="text-slate-500">Break</dt><dd>13:00 – 14:00</dd>
+                <dt class="text-slate-500">Working hours per day</dt><dd class="font-medium">8</dd>
+              </dl>
+            </div>
+
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-semibold">Holidays</h3>
+                <button class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white">Add holiday</button>
+              </div>
+              <ul class="mt-3 divide-y divide-slate-100 text-sm">
+                <li class="flex items-center justify-between py-2">
+                  <span>National Day</span><span class="text-xs text-slate-500">31 Aug 2026 · full day</span>
+                </li>
+                <li class="flex items-center justify-between py-2">
+                  <span>Malaysia Day</span><span class="text-xs text-slate-500">16 Sep 2026 · full day</span>
+                </li>
+                <li class="flex items-center justify-between py-2">
+                  <span>Raya eve (example)</span><span class="text-xs text-slate-500">closes 13:00 · half day</span>
+                </li>
+              </ul>
+              <div class="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                <strong>Heads-up:</strong> no holidays entered for <strong>2027</strong> yet. Until
+                they are, due dates will be calculated as if the office is open on those days.
+              </div>
+              <p class="mt-3 text-xs text-slate-500">
+                Holidays are entered by hand — Malaysian holidays are largely lunar, so they
+                cannot be derived. An organisation API can sync them later.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- ADMIN: USERS ---------- -->
+      <section id="screen-users" class="view hidden">
+        <h2 class="text-xl font-semibold">Administration — Users and Roles</h2>
+        <p class="mt-1 text-sm text-slate-500">Accounts, roles and department assignment.</p>
+
+        <div class="mt-5 overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-4 py-2.5 font-medium">Name</th>
+                <th class="px-4 py-2.5 font-medium">Email</th>
+                <th class="px-4 py-2.5 font-medium">Department</th>
+                <th class="px-4 py-2.5 font-medium">Roles</th>
+                <th class="px-4 py-2.5 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="px-4 py-3">Ahmad bin Ali</td><td class="px-4 py-3 text-slate-600">ahmad.ali@example.com</td><td class="px-4 py-3">IT</td><td class="px-4 py-3">Requestor</td><td class="px-4 py-3"><span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Active</span></td></tr>
+              <tr><td class="px-4 py-3">Siti Nurhaliza binti Hassan</td><td class="px-4 py-3 text-slate-600">siti@example.com</td><td class="px-4 py-3">Operations</td><td class="px-4 py-3">Project Owner</td><td class="px-4 py-3"><span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Active</span></td></tr>
+              <tr><td class="px-4 py-3">Nurul Izzah</td><td class="px-4 py-3 text-slate-600">nurul@example.com</td><td class="px-4 py-3">IT</td><td class="px-4 py-3">IT Governance</td><td class="px-4 py-3"><span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Active</span></td></tr>
+              <tr><td class="px-4 py-3">Raj Kumar</td><td class="px-4 py-3 text-slate-600">raj@example.com</td><td class="px-4 py-3">IT</td><td class="px-4 py-3">Technical Reviewer · IT Operations</td><td class="px-4 py-3"><span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Active</span></td></tr>
+              <tr><td class="px-4 py-3">Aisyah Rahman</td><td class="px-4 py-3 text-slate-600">aisyah@example.com</td><td class="px-4 py-3">IT</td><td class="px-4 py-3">Technical Reviewer · Delivery</td><td class="px-4 py-3"><span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Inactive</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mt-4 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <h3 class="text-sm font-semibold">Microsoft Entra ID</h3>
+          <p class="mt-1 text-sm text-slate-600">Not connected. The POC uses local accounts.</p>
+          <p class="mt-2 text-xs text-slate-500">
+            <code class="rounded bg-slate-100 px-1">entra_object_id</code> is already a column, so
+            connecting Entra later is a configuration change and not a data migration.
+          </p>
+        </div>
+      </section>
+
+      <!-- ---------- AUDIT (auditor role) ---------- -->
+      <section id="screen-audit" class="view hidden">
+        <h2 class="text-xl font-semibold">Audit Log</h2>
+        <p class="mt-1 text-sm text-slate-500">Read-only. Every material action, with actor and timestamp.</p>
+
+        <div class="mt-5 overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-4 py-2.5 font-medium whitespace-nowrap">When</th>
+                <th class="px-4 py-2.5 font-medium">Actor</th>
+                <th class="px-4 py-2.5 font-medium">Request</th>
+                <th class="px-4 py-2.5 font-medium">Event</th>
+                <th class="px-4 py-2.5 font-medium">Change</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="px-4 py-2.5 whitespace-nowrap text-slate-600">24 Sep, 11:20</td><td class="px-4 py-2.5">Nurul Izzah</td><td class="px-4 py-2.5 font-mono text-xs">REQ-2026-0042</td><td class="px-4 py-2.5">Comment added (internal)</td><td class="px-4 py-2.5 text-slate-500">—</td></tr>
+              <tr><td class="px-4 py-2.5 whitespace-nowrap text-slate-600">24 Sep, 08:15</td><td class="px-4 py-2.5">Aisyah Rahman</td><td class="px-4 py-2.5 font-mono text-xs">REQ-2026-0042</td><td class="px-4 py-2.5">Recommendation revised</td><td class="px-4 py-2.5 text-slate-500">v1 → v2</td></tr>
+              <tr><td class="px-4 py-2.5 whitespace-nowrap text-slate-600">22 Sep, 11:02</td><td class="px-4 py-2.5">Nurul Izzah</td><td class="px-4 py-2.5 font-mono text-xs">REQ-2026-0042</td><td class="px-4 py-2.5">Classification assigned</td><td class="px-4 py-2.5 text-slate-500">Subscription → Enhancement</td></tr>
+              <tr><td class="px-4 py-2.5 whitespace-nowrap text-slate-600">22 Sep, 16:15</td><td class="px-4 py-2.5">Tan Wei Ming</td><td class="px-4 py-2.5 font-mono text-xs">REQ-2026-0042</td><td class="px-4 py-2.5">Approved</td><td class="px-4 py-2.5 text-slate-500">Sponsor stage</td></tr>
+              <tr><td class="px-4 py-2.5 whitespace-nowrap text-slate-600">21 Sep, 09:12</td><td class="px-4 py-2.5">Ahmad bin Ali</td><td class="px-4 py-2.5 font-mono text-xs">REQ-2026-0042</td><td class="px-4 py-2.5">Submitted</td><td class="px-4 py-2.5 text-slate-500">Draft → Submitted</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+          The audit log has no edit or delete path in the application. A record that can be
+          changed is not evidence.
+        </p>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script>
+/* ---------------------------------------------------------------
+   Prototype navigation. No framework, no build step, no backend.
+   --------------------------------------------------------------- */
+
+const NAV = [
+  { id: 'dashboard',       label: 'Dashboard',            roles: ['*'] },
+  { id: 'wizard',          label: 'New Request',          roles: ['requestor','admin'] },
+  { id: 'list',            label: 'My Requests',          roles: ['requestor','owner','sponsor','governance','technical','hou','committee','admin'] },
+  { id: 'approvals',       label: 'My Approvals',         roles: ['owner','sponsor','admin'] },
+  { id: 'recommendations', label: 'Recommendations',      roles: ['technical','admin'] },
+  { id: 'governance',      label: 'Governance Workspace', roles: ['governance','hou','admin'] },
+  { id: 'committee',       label: 'Committee Workspace',  roles: ['committee','governance','admin'] },
+  { id: 'reports',         label: 'Reports',              roles: ['reports','admin','governance','hou'] },
+  { id: 'admin',           label: 'Admin — Reference data', roles: ['admin'] },
+  { id: 'settings',        label: 'Admin — Due dates',    roles: ['admin'] },
+  { id: 'users',           label: 'Admin — Users',        roles: ['admin'] },
+  { id: 'audit',           label: 'Audit Log',            roles: ['auditor','admin'] },
+];
+
+const SCOPE = {
+  requestor:    'You see your own requests only.',
+  owner:        'You see requests where you are the named Project Owner, plus your own.',
+  sponsor:      'You see requests where you are the named Project Sponsor, plus your own.',
+  governance:   'You see all requests. Internal notes are visible to you.',
+  technical:    'You see requests assigned to IT Operations for review.',
+  hou:          'You see all requests awaiting consolidation.',
+  committee:    'You see Full-route requests only.',
+  reports:      'Read-only view of all requests and dashboards.',
+  admin:        'Full access, including reference data and configuration.',
+  auditor:      'Read-only access to every record and the audit log. Nothing can be changed.',
+};
+
+const GREETING = {
+  requestor:    'Your drafts, submissions and anything returned for amendment.',
+  owner:        'Requests awaiting your approval as Project Owner.',
+  sponsor:      'Requests awaiting your approval as Project Sponsor.',
+  governance:   'Requests awaiting completeness review and assessment.',
+  technical:    'Requests assigned to your unit for technical review.',
+  hou:          'Requests with all recommendations in, ready to consolidate.',
+  committee:    'Full-route requests awaiting an IT Investment Committee decision.',
+  reports:      'Workload, aging, turnaround and outcomes across all requests.',
+  admin:        'System health, configuration and reference data.',
+  auditor:      'Read-only view of every record and its audit history.',
+};
+
+let currentRole = 'requestor';
+
+function go(id) {
+  document.querySelectorAll('.view').forEach(s => s.classList.add('hidden'));
+  const el = document.getElementById('screen-' + id);
+  if (el) el.classList.remove('hidden');
+  document.querySelectorAll('[data-nav]').forEach(a => {
+    const on = a.dataset.nav === id;
+    a.className = on
+      ? 'flex items-center rounded-lg px-3 py-2 font-medium bg-indigo-50 text-indigo-700'
+      : 'flex items-center rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-slate-900';
+  });
+  if (window.innerWidth < 1024) document.getElementById('nav').classList.add('hidden');
+  window.scrollTo({ top: 0 });
+}
+
+function renderNav() {
+  const list = document.getElementById('nav-list');
+  list.innerHTML = '';
+  NAV.forEach(item => {
+    if (!item.roles.includes('*') && !item.roles.includes(currentRole)) return;
+    const li = document.createElement('li');
+    li.innerHTML = `<a href="#" data-nav="${item.id}" onclick="go('${item.id}');return false;"
+      class="flex items-center rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-slate-900">${item.label}</a>`;
+    list.appendChild(li);
+  });
+  document.getElementById('scope-note').textContent = SCOPE[currentRole] || '';
+}
+
+function renderCards() {
+  const cards = {
+    requestor: [['My open requests','4','1 returned for amendment'],['Drafts','1','Not yet submitted'],
+                ['Awaiting my action','2','Includes 1 returned'],['Closed this year','7','']],
+    owner:     [['Awaiting my approval','3','1 overdue'],['Approved by me','12',''],
+                ['Returned by me','2',''],['Median time to decide','2.1 days','']],
+    sponsor:   [['Awaiting my approval','2',''],['Approved by me','9',''],
+                ['Returned by me','1',''],['Median time to decide','1.8 days','']],
+    governance:[['Awaiting completeness','2',''],['Awaiting consolidation','2','1 due in 2 days'],
+                ['Requests with missing documents','3',''],['Assessed this month','11','']],
+    technical: [['Assigned to my unit','3','1 due in 4 days'],['Filed by me','8',''],
+                ['Revised','2',''],['Median time to file','1.4 days','']],
+    hou:       [['Awaiting consolidation','2','1 due in 2 days'],['Consolidated this month','6',''],
+                ['Routes set — Full','3',''],['Routes set — Light/Moderate','3','']],
+    committee: [['Awaiting decision','3',''],['Decided this quarter','8',''],
+                ['Approved with conditions','3',''],['Not recommended','1','']],
+    reports:   [['Open requests','23',''],['Overdue tasks','4','2 escalated'],
+                ['Median turnaround','14 days','target 16'],['SLA compliance','83%','']],
+    admin:     [['Active users','48',''],['Roles configured','9',''],
+                ['Holidays entered','3','none for 2027'],['Failed notifications','0','']],
+    auditor:   [['Audit entries this month','412',''],['Requests in scope','64',''],
+                ['Configuration changes','7',''],['Access denied events','2','']],
+  }[currentRole] || [];
+
+  document.getElementById('dash-cards').innerHTML = cards.map(([label, value, note]) => `
+    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <p class="text-xs text-slate-500">${label}</p>
+      <p class="mt-1 text-2xl font-semibold">${value}</p>
+      ${note ? `<p class="mt-1 text-xs text-slate-500">${note}</p>` : ''}
+    </div>`).join('');
+}
+
+function setRole(role) {
+  currentRole = role;
+  renderNav();
+  renderCards();
+  document.getElementById('dash-greeting').textContent = GREETING[role] || '';
+  const first = NAV.find(n => n.roles.includes('*') || n.roles.includes(role));
+  go(first ? first.id : 'dashboard');
+}
+
+function toggleNav() {
+  document.getElementById('nav').classList.toggle('hidden');
+}
+
+/* Conditional field group — implements BR-003 in miniature. */
+function bp(aligned) {
+  document.getElementById('bp-ref').classList.toggle('hidden', !aligned);
+  document.getElementById('bp-adhoc').classList.toggle('hidden', aligned);
+}
+
+function enterApp() {
+  document.getElementById('screen-login').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  setRole('requestor');
+}
+
+/* Deep links for review convenience: #detail, #wizard, etc. */
+function bootFromHash() {
+  const id = location.hash.replace('#', '');
+  if (!id) return;
+  document.getElementById('screen-login').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  setRole('admin');
+  if (document.getElementById('screen-' + id)) go(id);
+}
+
+bootFromHash();
+window.addEventListener('hashchange', bootFromHash);
+</script>
+</body>
+</html>
