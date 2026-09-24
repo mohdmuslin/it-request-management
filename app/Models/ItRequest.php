@@ -192,6 +192,25 @@ class ItRequest extends Model
         return $this->hasOne(CommitteeDecision::class, 'request_id');
     }
 
+    /** The governance assessment, with its reason for any reclassification. */
+    public function completenessAssessment(): HasOne
+    {
+        return $this->hasOne(CompletenessAssessment::class, 'request_id');
+    }
+
+    /**
+     * Each unit's CURRENT recommendation — the latest version per unit.
+     *
+     * Not `recommendations()`, which returns every version including superseded ones.
+     * The detail screen and the consolidation both want the current position, and a
+     * screen that showed all versions would present a unit's abandoned position as
+     * though it were still held.
+     */
+    public function currentRecommendations(): HasMany
+    {
+        return $this->hasMany(Recommendation::class, 'request_id')->current();
+    }
+
     public function histories(): HasMany
     {
         return $this->hasMany(WorkflowHistory::class, 'request_id')->orderBy('created_at');

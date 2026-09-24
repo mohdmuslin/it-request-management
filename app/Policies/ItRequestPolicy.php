@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Enums\RequestStatus;
 use App\Enums\UserRole;
+use App\Enums\WorkflowStage;
 use App\Models\ItRequest;
 use App\Models\User;
 
@@ -176,6 +177,57 @@ class ItRequestPolicy
             UserRole::CommitteeSecretariat,
             UserRole::Administrator,
         );
+    }
+
+    /**
+     * May this user assess the request's completeness (tier and classification).
+     *
+     * The Governance Reviewer confirms or corrects what the requestor proposed. The
+     * requestor cannot assess their own request — that would make the proposal the
+     * decision, and there would be nothing to confirm.
+     */
+    public function assess(User $user, ItRequest $request): bool
+    {
+        return ! $user->isReadOnly()
+            && $request->current_stage === WorkflowStage::CompletenessReview->value
+            && $user->hasAnyRole(UserRole::GovernanceReviewer, UserRole::Administrator);
+    }
+
+    /**
+     * May this user file a recommendation for a reviewing unit.
+     *
+     * Membership of an ASSIGNED unit is checked in the service, against the unit
+     * being filed for. This only establishes that the user is a technical reviewer at
+     * all, so the policy does not have to know which unit the form was submitted for.
+     */
+    public function recommend(User $user, ItRequest $request): bool
+    {
+        return ! $user->isReadOnly()
+            && $request->current_stage === WorkflowStage::TechnicalRecommendation->value
+            && $user->hasAnyRole(UserRole::TechnicalReviewer, UserRole::Administrator);
+    }
+
+    /** May this user consolidate and set the governance route. */
+    public function consolidate(User $user, ItRequest $request): bool
+    {
+        return ! $user->isReadOnly()
+            && $request->current_stage === WorkflowStage::Consolidation->value
+            && $user->hasAnyRole(UserRole::Hou, UserRole::Administrator);
+    }
+
+    /**
+     * May this user record the committee's decision.
+     *
+     * Requires the ROUTE to demand a committee, not only the stage — a decision by a
+     * body with no authority over the request would otherwise look entirely
+     * legitimate on the screen.
+     */
+    public function recordCommitteeDecision(User $user, ItRequest $request): bool
+    {
+        return ! $user->isReadOnly()
+            && $request->current_stage === WorkflowStage::CommitteeDecision->value
+            && (bool) $request->governanceRoute?->requires_committee
+            && $user->hasAnyRole(UserRole::CommitteeSecretariat, UserRole::Administrator);
     }
 
     /** The requestor, the Owner or the Sponsor. */

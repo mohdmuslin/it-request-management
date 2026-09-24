@@ -107,7 +107,13 @@
                                     </td>
                                     <td class="px-3 py-2.5">
                                         <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-                                            {{ $task->stage }}
+                                            {{--
+                                                The column holds the stage CODE, so it must be
+                                                mapped to its label. Rendering the raw value
+                                                printed "committee_decision" in a table a manager
+                                                reads — accurate, and not a stage name.
+                                            --}}
+                                            {{ WorkflowStage::tryFrom($task->stage)?->label() ?? $task->stage }}
                                         </span>
                                     </td>
                                     <td class="hidden px-3 py-2.5 text-slate-600 sm:table-cell">

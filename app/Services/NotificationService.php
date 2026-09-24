@@ -2,12 +2,14 @@
 
 namespace App\Services;
 
+use App\Enums\UserRole;
 use App\Enums\WorkflowStage;
 use App\Models\ApprovalTask;
 use App\Models\Delegation;
 use App\Models\ItRequest;
 use App\Models\Notification as NotificationRecord;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -209,6 +211,89 @@ class NotificationService
         $task->forceFill(['escalated_at' => now(), 'breached_at' => $task->breached_at ?? now()])->save();
 
         return $sent;
+    }
+
+    /**
+     * Tell the people responsible for a stage that a request has reached it.
+     *
+     * Used for the technical and consolidation stages, which have no single named
+     * approver — the recipients are resolved from the role, and for the technical
+     * stage from the units that must review it.
+     */
+    public function notifyStageReached(ItRequest $request, WorkflowStage $stage): void
+    {
+        $recipients = $this->recipientsForStage($request, $stage);
+
+        if ($recipients->isEmpty()) {
+            /*
+             * Recorded as a log line, not a notification row.
+             *
+             * An unassigned stage is a real governance problem and somebody should be
+             * able to see it — but there is no user to attach a notification to, so a
+             * row would have to name one arbitrarily.
+             */
+            Log::warning('No recipient for a stage that has been reached.', [
+                'request' => $request->request_no,
+                'stage' => $stage->value,
+            ]);
+
+            return;
+        }
+
+        foreach ($recipients as $recipient) {
+            $this->send(
+                user: $recipient,
+                template: 'stage.reached.'.$stage->value,
+                subject: "{$request->request_no} is ready for {$stage->label()}",
+                body: "A request has reached {$stage->label()}.\n\n"
+                    ."Request: {$request->request_no}\n"
+                    ."Title: {$request->title}\n"
+                    ."\nOpen the request: ".route('requests.show', $request),
+                request: $request,
+            );
+        }
+    }
+
+    /**
+     * Who is responsible for a stage.
+     *
+     * The technical stage goes to the members of every assigned reviewing unit — NOT
+     * to the technical review role as a whole, because a reviewer who is not in an
+     * assigned unit cannot file a recommendation and would be told about work they
+     * cannot do.
+     */
+    private function recipientsForStage(ItRequest $request, WorkflowStage $stage): Collection
+    {
+        if ($stage === WorkflowStage::TechnicalRecommendation) {
+            $unitIds = app(GovernanceService::class)
+                ->unitsFor((int) $request->classification_id)
+                ->pluck('id');
+
+            if ($unitIds->isEmpty()) {
+                return collect();
+            }
+
+            return User::query()
+                ->active()
+                ->whereHas('reviewUnits', fn ($q) => $q->whereIn('review_units.id', $unitIds))
+                ->get();
+        }
+
+        $role = match ($stage) {
+            WorkflowStage::CompletenessReview => UserRole::GovernanceReviewer,
+            WorkflowStage::Consolidation => UserRole::Hou,
+            WorkflowStage::CommitteeDecision => UserRole::CommitteeSecretariat,
+            default => null,
+        };
+
+        if ($role === null) {
+            return collect();
+        }
+
+        return User::query()
+            ->active()
+            ->whereHas('roles', fn ($q) => $q->where('name', $role->value))
+            ->get();
     }
 
     /**

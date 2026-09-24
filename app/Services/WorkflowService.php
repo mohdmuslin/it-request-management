@@ -75,12 +75,46 @@ class WorkflowService
                 'current_stage' => $to->value,
             ])->save();
 
-            if ($to !== WorkflowStage::Closure) {
+            if ($this->stageNeedsADecision($to)) {
                 $this->createApprovalTask($request, $to);
             }
 
             $this->recordTransition($request, $action, $from, $to->value);
         });
+    }
+
+    /**
+     * Whether entering a stage creates an approval task.
+     *
+     * DRIVEN BY THE REFERENCE DATA, NOT BY A MATCH EXPRESSION.
+     *
+     * `workflow_stages.is_approval` already distinguishes a stage somebody DECIDES at
+     * from one that is a governance act. This method used to create a task for every
+     * stage unconditionally, which meant the completeness review — an assessment, not
+     * a decision — received an approval task that could never be decided.
+     *
+     * The symptom was invisible until the end: a phantom task sat at
+     * `completeness_review` for the life of the request, and BR-006's guard refused
+     * closure because a decision was "still awaiting". The governance screens did not
+     * show it, because they filter on `current_stage` rather than on tasks.
+     *
+     * Reading the flag means an administrator can change which stages require a
+     * decision without a code change, and a new stage cannot silently inherit the
+     * wrong behaviour.
+     */
+    private function stageNeedsADecision(WorkflowStage $stage): bool
+    {
+        $model = WorkflowStageModel::where('code', $stage->value)->first();
+
+        /*
+         * Falls back to true when the stage is not in the reference data.
+         *
+         * Deliberate: a stage with no configuration row is a stage whose rules are
+         * unknown, and creating a task that turns out to be unnecessary is
+         * recoverable, whereas silently dropping an approval is not — the request
+         * would advance past a decision nobody made.
+         */
+        return $model ? (bool) $model->is_approval : true;
     }
 
     /**
