@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (Laravel + Pest)
+    runs-on: ubuntu-latest
+
+    # The suite runs twice, once per driver, so it needs a real MySQL to hand.
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: it_request_management
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -ppassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, pdo_sqlite, pdo_mysql, curl, zip, gd
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install PHP dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      # The frontend build MUST precede the tests.
+      #
+      # `public/build` is gitignored, so a fresh checkout has no Vite manifest. Any
+      # Blade view calling @vite() then dies with ViteManifestNotFoundException and
+      # the whole suite fails — which looks like a broken test rather than a missing
+      # build step. This ordering is load-bearing; do not reorganise these steps.
+      - name: Install and build frontend
+        run: |
+          npm ci
+          npm run build
+
+      # The suite runs on BOTH drivers, deliberately.
+      #
+      # SQLite is fast and is what the local suite uses, but it is not sufficient on
+      # its own. The sibling attendance project hit a date-cast column where the two
+      # drivers disagreed: Laravel binds a datetime string, MySQL's DATE column
+      # truncates it to the day so the query works, and SQLite stores the full string
+      # so the query matched nothing. Tests were green while the screen showed zero.
+      #
+      # This application has the same shape of risk — a unique index on holidays.date,
+      # decimal budget amounts, and business-day arithmetic — so anything touching a
+      # date, a decimal or a unique constraint is only genuinely proven on MySQL.
+      - name: Run tests on SQLite
+        run: php vendor/bin/pest --compact
+
+      - name: Point the environment at MySQL
+        run: |
+          sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=mysql/' .env
+          sed -i 's/^# DB_HOST=.*/DB_HOST=127.0.0.1/' .env
+          sed -i 's/^# DB_PORT=.*/DB_PORT=3306/' .env
+          sed -i 's/^# DB_DATABASE=.*/DB_DATABASE=it_request_management/' .env
+          sed -i 's/^# DB_USERNAME=.*/DB_USERNAME=root/' .env
+          sed -i 's/^# DB_PASSWORD=.*/DB_PASSWORD=password/' .env
+
+      - name: Run tests on MySQL
+        run: php vendor/bin/pest --compact
+
+      - name: Check code style
+        run: php vendor/bin/pint --test
+
+  migrations:
+    name: Migrations and seeders on MySQL
+    runs-on: ubuntu-latest
+
+    # A separate job because a fresh migrate-and-seed is a different question from
+    # "does the suite pass": it proves the reference data seeds cleanly on the
+    # production driver, and that the seeder's guard does not fire there.
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: it_request_management
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -ppassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, pdo_mysql, curl, zip
+          coverage: none
+
+      - name: Install PHP dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=mysql/' .env
+          sed -i 's/^# DB_HOST=.*/DB_HOST=127.0.0.1/' .env
+          sed -i 's/^# DB_PORT=.*/DB_PORT=3306/' .env
+          sed -i 's/^# DB_DATABASE=.*/DB_DATABASE=it_request_management/' .env
+          sed -i 's/^# DB_USERNAME=.*/DB_USERNAME=root/' .env
+          sed -i 's/^# DB_PASSWORD=.*/DB_PASSWORD=password/' .env
+
+      - name: Migrate and seed from scratch
+        run: php artisan migrate:fresh --seed --force
+
+      # The reference seeder must be idempotent: an administrator edits tiers and
+      # classifications after deployment, and re-running it must not duplicate them.
+      - name: Re-seed to prove idempotency
+        run: php artisan db:seed --force
+
+      # Assertions live in a PHP file rather than inline `artisan tinker --execute`.
+      #
+      # Shell-quoting PHP inside a YAML run block is fragile — a `$` in a
+      # double-quoted string, an escaping difference between bash and the YAML
+      # parser, and the assertion silently checks the wrong thing. A file has no
+      # quoting, and it can be run by hand when it fails.
+      #
+      # It also asserts in BOTH directions: the demo-account guard must seed in
+      # local and refuse elsewhere. A guard that never fires and one that always
+      # fires are equally wrong, and only one is usually tested.
+      - name: Assert the seeded data is correct
+        run: php scripts/ci-assert-reference-data.php
