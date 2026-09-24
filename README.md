@@ -8,7 +8,12 @@ complete audit trail.
 
 **Status:** POC in design. Documents complete; prototype complete; application not yet built.
 
-Repository: `github.com/mohdmuslin/it-request-management` (private), branch `main`.
+Repository: `github.com/mohdmuslin/it-request-management`, branch `main`.
+
+> **Check the repository visibility before adding confidential material.** The vendor brief is
+> marked CONFIDENTIAL, and so is the process flow. This repository was created public by mistake
+> and must be private before any further client material is committed. Visibility is a GitHub
+> setting, not something this file can assert — verify it rather than trusting a note.
 
 ---
 
@@ -82,7 +87,9 @@ after the technical recommendations are in.
 ## Stack
 
 - **PHP 8.3+ / Laravel 13** — the brief prefers 8.4+; the host version must be confirmed
-- **Blade + Livewire 3 + Tailwind 4** — the brief's named frontend stack
+- **Blade + Livewire 4 + Tailwind 4** — the brief's named frontend stack. Components are
+  class-based rather than Livewire 4's single-file default, because the brief requires each
+  workflow transition to be tested and logic inside a Blade template is harder to test
 - **MySQL 8.4**
 - **Pest 4** for tests, **Pint** for formatting
 - **Database queue + cron worker** — the host has no Redis and no worker processes
