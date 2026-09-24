@@ -267,6 +267,55 @@ in the application complained.
 
 **Done when:** UAT-014 passes and export totals reconcile with the transactional records.
 
+#### Progress
+
+| Item | Status |
+|---|---|
+| `ReportingService` — workload, aging, turnaround, outcomes, stage durations, overdue | ✅ Done |
+| Reports screen with ten filters, all linkable via the URL | ✅ Done |
+| CSV export carrying the same filters as the screen | ✅ Done |
+| Administration — reference data (4 kinds) | ✅ Done |
+| Administration — due dates and holiday calendar | ✅ Done |
+| Administration — users, roles and review-unit membership | ✅ Done |
+| 270 tests passing, Pint clean | ✅ Done |
+
+**Reconciliation is structural, not maintained.** `ReportingService::query()` is the single
+entry point and every figure is derived from the builder it returns, so a total cannot disagree
+with the list it summarises. The export takes the same querystring the report publishes and
+applies it through the same `applyFilters()`, so the file and the screen contain the same set.
+
+**Aging walks the business calendar.** Dividing elapsed hours by eight gives a wrong answer either
+side of a weekend — Monday 09:00 back to Friday 17:00 is 64 hours, which reads as eight business
+days and is actually one — and subtracting dates and scaling by five-sevenths is wrong again
+across a public holiday. Counting the working days that have actually elapsed cannot be wrong in
+either case.
+
+**Turnaround headlines the median.** One request returned three times and left open for two months
+drags the average away from every other request, so the average describes a turnaround nobody
+experienced. With nothing closed the figure is `null`, not `0` — "0 hours" reads as "we are
+instant", which is the opposite of "we have not finished anything".
+
+**Three defects were found by testing:**
+
+1. **`Holiday` stored `2026-12-25 00:00:00`.** Laravel's `date` cast serialises through
+   `fromDateTime()`, and MySQL's DATE column truncates that back — so it works on MySQL and breaks
+   on SQLite, where the whole string is stored. The `unique:holidays,date` validation then found no
+   match, passed, and the database rejected the insert: the user saw a database error instead of
+   "that date is already in the calendar". A mutator now writes the date portion on both drivers.
+2. **The export controller called `$this->authorize()`** and the base controller in Laravel's slim
+   skeleton does not include `AuthorizesRequests` — a 500 where a 403 belongs.
+3. **`scripts/dev-advance-request.php` walked a request backwards.** It looped "while not at
+   completeness review, decide whatever task is pending", so run against a request already at the
+   committee it decided the *committee's* task and produced a state no real sequence creates. A
+   pending task is not evidence that its stage is the next one due.
+
+> **Deactivation replaces deletion throughout.** Every reference table and the user table are
+> referenced by requests that already exist; deleting a tier would orphan them and deleting an
+> account would lose the name of the person who approved something. Options are deactivated instead,
+> which removes them from the pickers and leaves every existing record intact. The last active
+> option of a kind cannot be deactivated, and an administrator cannot deactivate themselves or drop
+> their own administrator role — the one change that can lock everybody out.
+
 ---
 
 ### Phase H — Testing, deployment and handover
