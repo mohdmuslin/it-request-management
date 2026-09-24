@@ -6,7 +6,22 @@ initiatives. It replaces a mix of Microsoft Forms, a SharePoint list, email and 
 one controlled workflow, structured data, document management, notifications, dashboards and a
 complete audit trail.
 
-**Status:** POC in design. Documents complete; prototype in progress; application not yet built.
+**Status:** POC in design. Documents complete; prototype complete; application not yet built.
+
+Repository: `github.com/mohdmuslin/it-request-management` (private), branch `main`.
+
+---
+
+## Repository layout
+
+```
+docs/         design documents and the source material as supplied
+prototype/    index.html — the clickable prototype. Open it in a browser
+public/       document root; .htaccess carries the directory-listing rule
+```
+
+The Laravel application will live at the repository root, with `public/` as the document root on
+the server. See `docs/architecture.md` §8.
 
 ---
 
