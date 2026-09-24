@@ -139,6 +139,54 @@ by signing in as every role in turn — which is why that is now a test rather t
 **Done when:** UAT-004, UAT-005, UAT-007 and UAT-012 pass, and the tests prove prohibited
 transitions are refused.
 
+#### Progress
+
+| Item | Status |
+|---|---|
+| `WorkflowDecisionService` — approve, conditions, return, reject | ✅ Done |
+| Mandatory comment on return and reject (BR-002) | ✅ Done |
+| Conditions required for a conditional approval | ✅ Done |
+| Owner → Sponsor chain, then handover to governance | ✅ Done |
+| Return resumes at the returning stage (BR-007) | ✅ Done |
+| Delegation — table, model, screen, `delegated_from_id` capture (FR-014, BR-008) | ✅ Done |
+| Approvals queue, scoped by the decision service rather than a where clause | ✅ Done |
+| Decision panel with conditions and mandatory comments | ✅ Done |
+| Edit and resubmit an amended request | ✅ Done |
+| Notifications — assignment, decision, reminder, escalation | ✅ Done (mail gated off) |
+| `itrequest:notify-approvals` scheduled hourly, idempotent, `--dry-run` | ✅ Done |
+| Queue worker on cron | ✅ Done |
+| **Email proven from the host** | ⬜ **Still the gate — see below** |
+| 153 tests passing, Pint clean | ✅ Done |
+
+**Four defects were found by walking the application, none of them by the 140 tests that passed
+afterwards.** Every one was a feature that worked in the service and was unreachable or wrong in
+the interface:
+
+1. **"Edit draft" opened a blank form.** It linked to `requests.create` and passed no request id;
+   the `requests.edit` route did not exist at all.
+2. **A returned request had no way back into the chain.** BR-007's resume behaviour was correct in
+   the service and proved by tests — and a requestor whose request came back could only look at it.
+3. **Editing a returned request and submitting restarted the chain.** `persist()` called `submit()`
+   unconditionally, which resets the stage to Project Owner, so a request the Sponsor had returned
+   went back to the Owner and the returning stage was silently discarded.
+4. **The queue mislabelled delegated work.** It read `delegated_from_id`, which is written *after* a
+   decision, so a delegate saw no "acting for" marker on the tasks they were about to decide —
+   only on ones somebody else had already decided.
+
+**Two service-level issues were caught while building, before they shipped:**
+
+- `completeApprovals()` would have called `close()`, marking a request Closed the moment its
+  Sponsor approved — skipping the entire governance phase while looking like a successful approval.
+- The history trail mixed vocabularies, writing `approved` from the decision but `return` from an
+  internal label, so a reader saw "approved, return, approved" and could not tell whether `return`
+  and `returned` were different events.
+
+> **Delegation needed a table, not a column.** `approval_tasks.delegated_from_id` records that a
+> decision *was* made on someone's behalf. Nothing could say a delegation was *in force*, so a
+> delegate could not see what was waiting on them without being asked — which is the whole point of
+> the feature. The column was not wrong; it answered a different question than the one the use case
+> asked.
+
 ---
 
 ### Phase F — Governance module
