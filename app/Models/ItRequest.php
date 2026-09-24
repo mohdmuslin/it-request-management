@@ -150,9 +150,20 @@ class ItRequest extends Model
         return $this->belongsTo(GovernanceRoute::class);
     }
 
+    /*
+     * The foreign key is `request_id` on every child table, and it is named
+     * explicitly in each relationship below.
+     *
+     * WHY: Laravel derives the key from the PARENT class name, so for this model it
+     * looks for `it_request_id`. That column does not exist, and the resulting
+     * "no such column" error surfaces at query time rather than when the
+     * relationship is defined. Relying on the convention here is a bug that waits
+     * for the first eager load to reveal itself.
+     */
+
     public function approvalTasks(): HasMany
     {
-        return $this->hasMany(ApprovalTask::class)->orderBy('sequence');
+        return $this->hasMany(ApprovalTask::class, 'request_id')->orderBy('sequence');
     }
 
     /**
@@ -163,37 +174,37 @@ class ItRequest extends Model
      */
     public function pendingApprovalTask(): HasOne
     {
-        return $this->hasOne(ApprovalTask::class)->whereNull('decided_at');
+        return $this->hasOne(ApprovalTask::class, 'request_id')->whereNull('decided_at');
     }
 
     public function recommendations(): HasMany
     {
-        return $this->hasMany(Recommendation::class);
+        return $this->hasMany(Recommendation::class, 'request_id');
     }
 
     public function consolidation(): HasOne
     {
-        return $this->hasOne(RecommendationConsolidation::class);
+        return $this->hasOne(RecommendationConsolidation::class, 'request_id');
     }
 
     public function committeeDecision(): HasOne
     {
-        return $this->hasOne(CommitteeDecision::class);
+        return $this->hasOne(CommitteeDecision::class, 'request_id');
     }
 
     public function histories(): HasMany
     {
-        return $this->hasMany(WorkflowHistory::class)->orderBy('created_at');
+        return $this->hasMany(WorkflowHistory::class, 'request_id')->orderBy('created_at');
     }
 
     public function attachments(): HasMany
     {
-        return $this->hasMany(Attachment::class);
+        return $this->hasMany(Attachment::class, 'request_id');
     }
 
     public function comments(): HasMany
     {
-        return $this->hasMany(Comment::class)->orderBy('created_at');
+        return $this->hasMany(Comment::class, 'request_id')->orderBy('created_at');
     }
 
     // ---- State helpers -----------------------------------------------------

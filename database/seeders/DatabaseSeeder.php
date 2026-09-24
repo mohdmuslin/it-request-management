@@ -18,10 +18,16 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        // Safe anywhere: reference values only, no accounts.
         $this->call(ReferenceDataSeeder::class);
 
-        // Demo users and requests arrive with the request module, once the models
-        // they depend on are settled. Seeding them now would mean rewriting this
-        // seeder twice.
+        /*
+         * Demonstration accounts, in local development only.
+         *
+         * The environment check lives inside the seeder rather than here, so it
+         * cannot be bypassed by invoking DemoUserSeeder directly — which is the
+         * whole point of a guard.
+         */
+        $this->call(DemoUserSeeder::class);
     }
 }

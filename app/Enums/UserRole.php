@@ -61,19 +61,31 @@ enum UserRole: string
      *
      * Each role starts where its work is, rather than everyone landing on a
      * dashboard of things they cannot act on.
+     *
+     * THESE MUST BE FULL ROUTE NAMES, MATCHING routes/web.php EXACTLY.
+     *
+     * An earlier version returned bare names — 'recommendations', 'governance',
+     * 'audit' — against routes actually named 'recommendations.index',
+     * 'governance.index' and 'admin.audit.index'. Every role except Requestor and
+     * Administrator failed with a 500 on sign-in.
+     *
+     * Worse, the login form stayed on screen with the fields filled and the button
+     * disabled, so it looked like a slow sign-in rather than a server error. The
+     * failure was only found by signing in as each role in turn — which is exactly
+     * why that is worth doing rather than testing one account and assuming.
      */
     public function landingRoute(): string
     {
         return match ($this) {
             self::Requestor => 'dashboard',
             self::ProjectOwner,
-            self::ProjectSponsor => 'approvals',
-            self::GovernanceReviewer => 'governance',
-            self::TechnicalReviewer => 'recommendations',
-            self::Hou => 'governance',
-            self::CommitteeSecretariat => 'committee',
+            self::ProjectSponsor => 'approvals.index',
+            self::GovernanceReviewer => 'governance.index',
+            self::TechnicalReviewer => 'recommendations.index',
+            self::Hou => 'governance.index',
+            self::CommitteeSecretariat => 'committee.index',
             self::Administrator => 'dashboard',
-            self::Auditor => 'audit',
+            self::Auditor => 'admin.audit.index',
         };
     }
 

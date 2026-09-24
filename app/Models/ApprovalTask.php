@@ -42,6 +42,11 @@ class ApprovalTask extends Model
 
     public function request(): BelongsTo
     {
+        // The foreign key is named explicitly because Laravel would otherwise
+        // derive `it_request_id` from the ItRequest class name, and the column is
+        // `request_id`. Guessing wrong produces a "no such column" error at query
+        // time rather than at definition time, so it is worth being explicit on
+        // every relationship that points at a request.
         return $this->belongsTo(ItRequest::class, 'request_id');
     }
 

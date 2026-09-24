@@ -1,19 +1,19 @@
 <?php
 
-namespace Tests\Feature;
+/*
+ * The scaffolded example test asserted that `/` returns 200. That is no longer
+ * true by design: the root now redirects to the dashboard, and the dashboard
+ * requires authentication. Keeping the original assertion would mean either an
+ * anonymous dashboard — which would be a security defect — or a permanently red
+ * suite, which trains people to ignore it.
+ *
+ * Replaced with the behaviour the application actually has.
+ */
 
-// use Illuminate\Foundation\Testing\RefreshDatabase;
-use Tests\TestCase;
+it('redirects the root to the dashboard', function () {
+    $this->get('/')->assertRedirect('/dashboard');
+});
 
-class ExampleTest extends TestCase
-{
-    /**
-     * A basic test example.
-     */
-    public function test_the_application_returns_a_successful_response(): void
-    {
-        $response = $this->get('/');
-
-        $response->assertStatus(200);
-    }
-}
+it('sends an anonymous visitor to the sign-in screen', function () {
+    $this->get('/dashboard')->assertRedirect('/login');
+});
