@@ -55,8 +55,21 @@ return new class extends Migration
              * Deliberately not derived from an org chart. A named approver is
              * accountable and the trail is unambiguous; a role-based queue lets a
              * request sit unowned with nobody able to say whose turn it is.
+             *
+             * NULLABLE, because a draft is not yet a request.
+             *
+             * This was NOT NULL, which made a draft impossible to save until the
+             * requestor had chosen an owner — so somebody who did not yet know who
+             * the owner would be could not start at all, and would keep the idea in
+             * a private document instead. That is the behaviour this system exists
+             * to replace.
+             *
+             * The requirement is enforced where it belongs: wizard step 1 requires
+             * it, and submission re-validates every step before the request enters
+             * the chain. So no request can ever be SUBMITTED without an owner — the
+             * constraint is on the transition, not on the row's existence.
              */
-            $table->foreignId('project_owner_id')->constrained('users')->restrictOnDelete();
+            $table->foreignId('project_owner_id')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('project_sponsor_id')->nullable()->constrained('users')->restrictOnDelete();
 
             // The requestor's proposal.

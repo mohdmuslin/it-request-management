@@ -28,7 +28,20 @@ return new class extends Migration
             $table->string('stage', 50);
             $table->unsignedSmallInteger('sequence');
 
-            $table->foreignId('approver_id')->constrained('users')->restrictOnDelete();
+            /*
+             * Nullable, because an unassigned task is a real state.
+             *
+             * Project Owner and Sponsor stages always have a named approver — they are
+             * named on the request. The governance, technical, consolidation and
+             * committee stages are held by ROLE, and this resolves the first active
+             * holder of that role.
+             *
+             * When nobody holds the role, the honest answer is no assignee. A
+             * non-nullable column would force a fabricated one, and the obvious
+             * candidate — the requestor — would produce the requestor approving their
+             * own governance review, which looks like it is working and is not.
+             */
+            $table->foreignId('approver_id')->nullable()->constrained('users')->nullOnDelete();
 
             /*
              * Delegation (FR-014).

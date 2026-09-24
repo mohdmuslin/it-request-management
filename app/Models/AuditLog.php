@@ -22,6 +22,15 @@ class AuditLog extends Model
 
     protected $table = 'audit_logs';
 
+    /**
+     * The table has created_at but no updated_at.
+     *
+     * The docblock above says a record that can be edited is not evidence; this
+     * constant is what actually makes that true at the ORM layer, by stopping
+     * Eloquent from writing a column that does not exist.
+     */
+    const UPDATED_AT = null;
+
     protected $fillable = [
         'user_id',
         'auditable_type',

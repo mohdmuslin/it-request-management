@@ -27,6 +27,16 @@ class WorkflowHistory extends Model
 {
     use HasFactory;
 
+    /**
+     * The table has created_at but no updated_at.
+     *
+     * Setting this to null makes Eloquent stop writing updated_at. Without it the
+     * docblock above was a claim the code did not honour — every insert failed with
+     * "table workflow_histories has no column named updated_at" on the first
+     * transition.
+     */
+    const UPDATED_AT = null;
+
     protected $fillable = [
         'request_id',
         'from_stage',

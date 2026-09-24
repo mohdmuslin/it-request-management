@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Enums\UserRole;
+use App\Models\ItRequest;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Route;
 use Livewire\Component;
@@ -60,11 +61,24 @@ class Navigation extends Component
                 'items' => array_filter([
                     $this->item('Dashboard', 'dashboard', 'home', true),
 
+                    /*
+                     * Gated on the POLICY, not on a role list.
+                     *
+                     * These two items were gated on requestor/owner/sponsor roles while
+                     * the policy allowed any non-auditor to create. The two answered the
+                     * same question differently, and the symptom was visible in the
+                     * browser: signed in as a Project Owner, the /requests page offered
+                     * a "New request" button that the navigation did not.
+                     *
+                     * `can()` is the same call the page and the policy use, so they
+                     * cannot drift — a role added to the policy appears in the menu
+                     * without anyone remembering to update this file.
+                     */
                     $this->item('New Request', 'requests.create', 'plus',
-                        $can(UserRole::Requestor)),
+                        $user->can('create', ItRequest::class)),
 
                     $this->item('My Requests', 'requests.index', 'document',
-                        $can(UserRole::Requestor, UserRole::ProjectOwner, UserRole::ProjectSponsor)),
+                        $user->can('viewAny', ItRequest::class)),
                 ]),
             ],
             [
