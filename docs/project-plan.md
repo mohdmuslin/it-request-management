@@ -72,6 +72,36 @@ stop and redesign notifications before Phase E.
 > unknown is resolved.** Four required features depend on it: assignment notification, decision
 > notification, reminders and escalation.
 
+#### Progress
+
+| Item | Status |
+|---|---|
+| Laravel 13.17 scaffold, PHP ^8.3 | ✅ Done |
+| Livewire 4.4, Tailwind 4 (already in the skeleton) | ✅ Done |
+| Pest 4.7 with PHPUnit 12.5.24 pinned | ✅ Done |
+| Migrations — 17 tables | ✅ Done |
+| Models — 20, with relationships and scopes | ✅ Done |
+| `config/itrequest.php` | ✅ Done |
+| Reference data seeder (9 roles, 3 tiers, 4 classifications, 3 routes, 3 units, 8 stages) | ✅ Done |
+| `BusinessCalendar` — business-time arithmetic | ✅ Done |
+| 22 tests passing, Pint clean | ✅ Done |
+| Layout shell, navigation, authentication | ⬜ Not started |
+| **Email proven from the host** | ⬜ Not started — the gate |
+
+**Two defects were found by the tests, both of which would have been silent in production:**
+
+1. **`addBusinessDays` returned the same day.** It was implemented as "N × hours in a day", so
+   one business day from Thursday completed *on Thursday*. A business user would say that is due
+   Friday. Fixed to advance whole working days while preserving the time of day.
+2. **No stage received a due date.** The config keys (`pending_project_owner`) did not match the
+   `WorkflowStage` enum values (`project_owner`), and the seeder skipped unresolvable keys
+   silently. Every request in the system would have had no deadline, with nothing reporting a
+   problem. Fixed, and the seeder now throws instead of skipping.
+
+Neither would have produced an error message. Both would have surfaced much later as "the due
+dates are wrong".
+
+
 ---
 
 ### Phase D — Request module
