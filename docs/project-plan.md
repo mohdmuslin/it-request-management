@@ -198,6 +198,64 @@ the interface:
 
 **Done when:** UAT-006, UAT-008, UAT-009 and UAT-010 pass.
 
+#### Progress
+
+| Item | Status |
+|---|---|
+| `GovernanceService` — assess, recommend, consolidate, committee, close | ✅ Done |
+| `CompletenessAssessment` model + table | ✅ Done |
+| Reason required when governance changes the requestor's proposal | ✅ Done |
+| Per-unit recommendations, versioned, never overwritten (FR-008, BR-005) | ✅ Done |
+| Reviewer must belong to the unit they file for | ✅ Done |
+| Request advances only when every assigned unit has filed | ✅ Done |
+| Consolidation sets the route; stored on request **and** consolidation row | ✅ Done |
+| Committee step for Full only, driven by `requires_committee` | ✅ Done |
+| Closure blocked until BR-006 is satisfied, with the blockers listed | ✅ Done |
+| Committee workspace — the Full-route agenda | ✅ Done |
+| `RecommendationOutcome` enum | ✅ Done |
+| 215 tests passing, Pint clean | ✅ Done |
+
+**One defect was found by a test failing for the wrong reason, and it was the most serious of the
+phase.**
+
+**`$request->governance_route` returned `null`.** The column is `governance_route_id`, but the
+relation is `governanceRoute()` — Eloquent resolves relations by method name, and reading the
+snake_case form does not raise an error. It returns null, so `?->requires_committee` was null, the
+condition was false, and **the BR-006 committee check never fired**. A Full-route request could have
+been closed without the IT Investment Committee ever deciding — the single outcome the Full route
+exists to prevent.
+
+It failed open silently: a missing blocker produces an empty array, and an empty array means
+"closure is permitted". Nothing logged, nothing threw, and the guard reported success. It was
+caught only because a test asserting the blocker was *missing* failed, rather than because anything
+in the application complained.
+
+**Three more defects, each a screen telling the user something untrue:**
+
+1. **A phantom approval task blocked every closure.** `advance()` created an approval task for
+   *every* stage, but the completeness review is an assessment, not a decision — so an undecidable
+   task sat at `completeness_review` for the life of the request and BR-006 refused closure. The
+   governance screens never showed it, because they filter on `current_stage` rather than on tasks.
+   Now driven by the `workflow_stages.is_approval` flag that already existed.
+2. **The governance workspace reported "0 requests in the governance process"** while a request was
+   with the committee. The tab list did not include the committee stage, so a request that had not
+   finished had also left every tab the screen knew about — a queue lying to the person whose job
+   is to watch the process.
+3. **Three screens rendered raw database values.** The dashboard Stage column showed
+   `committee_decision`, the governance record showed `recommended_with_conditions`, and the history
+   timeline showed `project_owner → returned_for_amendment`. Every one was accurate and none was
+   readable — and in the dashboard's case it was a table a manager reads.
+
+> **All three passed the existing test suite**, because no test asserted what the rendered text
+> *said*; they asserted that rows existed. `LabelRenderingTest` now asserts the absence of the raw
+> values on each surface, which is the assertion that catches this class.
+
+> **`recommendations.recommendation` had no vocabulary.** The column was a bare string from the
+> first migration, so three units could have filed `recommended`, `Recommended` and `yes`, and the
+> consolidation would have had to treat them as three different positions. `RecommendationOutcome`
+> defines four cases, with conditions required for a conditional recommendation and a reason
+> required for advising against.
+
 ---
 
 ### Phase G — Reporting and administration
