@@ -77,29 +77,43 @@ stop and redesign notifications before Phase E.
 | Item | Status |
 |---|---|
 | Laravel 13.17 scaffold, PHP ^8.3 | ✅ Done |
-| Livewire 4.4, Tailwind 4 (already in the skeleton) | ✅ Done |
+| Livewire 4.4 (class-based), Tailwind 4 | ✅ Done |
 | Pest 4.7 with PHPUnit 12.5.24 pinned | ✅ Done |
 | Migrations — 17 tables | ✅ Done |
 | Models — 20, with relationships and scopes | ✅ Done |
 | `config/itrequest.php` | ✅ Done |
 | Reference data seeder (9 roles, 3 tiers, 4 classifications, 3 routes, 3 units, 8 stages) | ✅ Done |
 | `BusinessCalendar` — business-time arithmetic | ✅ Done |
-| 22 tests passing, Pint clean | ✅ Done |
-| Layout shell, navigation, authentication | ⬜ Not started |
-| **Email proven from the host** | ⬜ Not started — the gate |
+| Layout shell, role-filtered navigation, dashboard | ✅ Done |
+| Local sign-in with per-role landing | ✅ Done |
+| Routes for all nine menus, with named placeholders | ✅ Done |
+| Demo accounts for all nine roles (local environment only) | ✅ Done |
+| 26 tests passing, Pint clean | ✅ Done |
+| **Email proven from the host** | ⬜ Deferred to 25 Sep — the gate for Phase E |
+| `ci.yml` | ⬜ Next |
 
-**Two defects were found by the tests, both of which would have been silent in production:**
+**Six defects were found by testing, all of which would have been silent in production:**
 
-1. **`addBusinessDays` returned the same day.** It was implemented as "N × hours in a day", so
-   one business day from Thursday completed *on Thursday*. A business user would say that is due
-   Friday. Fixed to advance whole working days while preserving the time of day.
-2. **No stage received a due date.** The config keys (`pending_project_owner`) did not match the
-   `WorkflowStage` enum values (`project_owner`), and the seeder skipped unresolvable keys
-   silently. Every request in the system would have had no deadline, with nothing reporting a
-   problem. Fixed, and the seeder now throws instead of skipping.
+1. **`addBusinessDays` returned the same day.** It multiplied hours rather than advancing days, so
+   one business day from Thursday completed *on Thursday*.
+2. **No stage received a due date.** The config keys did not match the `WorkflowStage` enum
+   values, and the seeder skipped unresolvable keys silently. Every request would have had no
+   deadline.
+3. **Seven of nine roles 500'd on sign-in.** `landingRoute()` returned bare route names against
+   dotted ones. The login form stayed on screen with the button showing "Signing in…", so it read
+   as a slow login rather than a server error.
+4. **Every request relationship guessed the wrong foreign key.** Laravel derives it from the model
+   name, so `ItRequest` produced `it_request_id` against a `request_id` column — a "no such column"
+   error at query time.
+5. **Every full-page component 500'd on the Livewire default layout**, which expects a view
+   namespace this project does not register.
+6. **The administrator's dashboard told them they had no role.** No branch matched, so the empty
+   state fired and blamed a missing role — for the most privileged user in the system.
 
-Neither would have produced an error message. Both would have surfaced much later as "the due
-dates are wrong".
+Defects 3, 5 and 6 share a shape worth noting: **each looked like something other than a failure.**
+A slow login, a missing layout, an empty screen. None said "error", and all three were found only
+by signing in as every role in turn — which is why that is now a test rather than a manual step.
+
 
 
 ---
