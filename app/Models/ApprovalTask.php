@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\Decision;
+use App\Enums\WorkflowStage;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -28,6 +29,7 @@ class ApprovalTask extends Model
         'due_at',
         'decision',
         'comments',
+        'conditions',
         'decided_at',
     ];
 
@@ -36,8 +38,17 @@ class ApprovalTask extends Model
         return [
             'due_at' => 'datetime',
             'decided_at' => 'datetime',
+            'reminded_at' => 'datetime',
+            'escalated_at' => 'datetime',
+            'breached_at' => 'datetime',
             'decision' => Decision::class,
         ];
+    }
+
+    /** The stage as an enum, or null if the column holds something unknown. */
+    public function stageEnum(): ?WorkflowStage
+    {
+        return WorkflowStage::tryFrom($this->stage);
     }
 
     public function request(): BelongsTo

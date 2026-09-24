@@ -66,9 +66,31 @@ Route::middleware('auth')->group(function () {
      */
     Route::get('/requests', Index::class)->name('requests.index');
     Route::get('/requests/create', Create::class)->name('requests.create');
+
+    /*
+     * Editing an existing request.
+     *
+     * Reuses the wizard rather than a separate screen: a draft and a returned request
+     * are both "the four steps, partially or previously completed", and a second
+     * implementation would be a second place for the validation to drift from the
+     * first.
+     *
+     * Declared before `{request}` so the wildcard does not swallow "create".
+     */
+    Route::get('/requests/{request}/edit', Create::class)->name('requests.edit');
+
     Route::get('/requests/{request}', Show::class)->name('requests.show');
 
     Route::get('/approvals', App\Livewire\Approvals\Index::class)->name('approvals.index');
+
+    /*
+     * Delegation (FR-014).
+     *
+     * Reachable from the approvals queue rather than the menu: cover is arranged
+     * when somebody is about to be away, which is the moment they are looking at
+     * their queue — not a screen they would think to visit otherwise.
+     */
+    Route::get('/delegations', App\Livewire\Delegations\Index::class)->name('delegations.index');
     Route::get('/recommendations', App\Livewire\Recommendations\Index::class)->name('recommendations.index');
     Route::get('/governance', App\Livewire\Governance\Index::class)->name('governance.index');
     Route::get('/committee', App\Livewire\Committee\Index::class)->name('committee.index');

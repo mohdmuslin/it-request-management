@@ -85,6 +85,31 @@ class Show extends Component
         $this->flash = 'Request withdrawn.';
     }
 
+    /**
+     * Resubmit a request that was returned for amendment (BR-007).
+     *
+     * Re-enters the stage that returned it rather than restarting the chain, so the
+     * requestor is not sent back through approvals that already passed and the
+     * approvers do not re-read decisions they have already made.
+     */
+    public function resubmit(): void
+    {
+        $this->authorize('resubmit', $this->request);
+
+        $resumed = app(WorkflowService::class)->resubmit($this->request);
+
+        $this->request->refresh();
+
+        /*
+         * The message names the stage, because "resubmitted" alone leaves the
+         * requestor unsure whether it went back to the beginning. Naming it answers
+         * the question they are actually asking: did my earlier approval survive?
+         */
+        $this->flash = $resumed
+            ? "Resubmitted. It is back with the {$resumed->label()}."
+            : 'Resubmitted.';
+    }
+
     public function render()
     {
         /*
@@ -115,6 +140,7 @@ class Show extends Component
             'canDecide' => auth()->user()->can('decide', $this->request),
             'canEdit' => auth()->user()->can('update', $this->request),
             'canSubmit' => auth()->user()->can('submit', $this->request),
+            'canResubmit' => auth()->user()->can('resubmit', $this->request),
             'canWithdraw' => auth()->user()->can('withdraw', $this->request),
             'pendingTask' => $this->request->pendingApprovalTask,
         ])->layout('components.layouts.app', ['title' => $this->request->title]);

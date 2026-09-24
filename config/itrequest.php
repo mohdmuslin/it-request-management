@@ -227,4 +227,33 @@ return [
         'escalate_days_after' => 1,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Notifications
+    |--------------------------------------------------------------------------
+    |
+    | WHY MAIL IS OFF BY DEFAULT
+    |
+    | Phase C's gate is "one real email received from this host" and it has not
+    | been proven. Four required features depend on it: assignment notification,
+    | decision notification, reminders and escalation.
+    |
+    | With this false, every notification is still RECORDED in the `notifications`
+    | table and logged, but nothing is delivered. That is deliberate:
+    |
+    |  - The notification trail stays visible and testable, so the feature can be
+    |    reviewed now rather than after the email question is settled.
+    |  - Turning mail on is a config change, not a rewrite.
+    |  - A row stays `pending` rather than being marked `sent`. Marking a
+    |    notification sent when nothing was delivered would make the log assert a
+    |    delivery that never happened — and would hide the first real send.
+    |
+    | Set ITREQUEST_MAIL_ENABLED=true once a real message has been received.
+    |
+    */
+
+    'notifications' => [
+        'mail_enabled' => (bool) env('ITREQUEST_MAIL_ENABLED', false),
+    ],
+
 ];

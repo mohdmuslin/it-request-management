@@ -60,12 +60,21 @@
     @endif
 
     {{-- ---- Actions ---------------------------------------------------- --}}
-    @if ($canSubmit || $canEdit || $canWithdraw || $canDecide)
+    @if ($canSubmit || $canEdit || $canWithdraw || $canResubmit || $canDecide)
         <div class="mt-4 flex flex-wrap gap-2">
             @if ($canEdit)
-                <a href="{{ route('requests.create') }}" wire:navigate
+                {{--
+                    Points at the EDIT route, not the create wizard.
+
+                    The first version linked to `requests.create`, so "Edit draft"
+                    opened a blank form — the request id was never passed, and the
+                    only way to find that out was to click it. Nothing in the test
+                    suite caught it because the tests drive the component directly
+                    rather than following the link.
+                --}}
+                <a href="{{ route('requests.edit', $r) }}" wire:navigate
                    class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                    Edit draft
+                    {{ $r->statusEnum() === RequestStatus::ReturnedForAmendment ? 'Amend and resubmit' : 'Edit draft' }}
                 </a>
             @endif
 
@@ -77,10 +86,28 @@
                 </button>
             @endif
 
+            {{--
+                Resubmit, for a returned request.
+
+                BR-007 says a returned request resumes at the stage that returned it.
+                That is asserted by a service test, but until this button existed the
+                behaviour could not be reached from the application at all — the screen
+                offered only "Edit draft" and "Withdraw", so a requestor had no way to
+                send their amendment back.
+            --}}
+            @if ($canResubmit)
+                <button type="button" wire:click="resubmit" wire:loading.attr="disabled"
+                        class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+                    <span wire:loading.remove wire:target="resubmit">Resubmit</span>
+                    <span wire:loading wire:target="resubmit">Resubmitting…</span>
+                </button>
+            @endif
+
             @if ($canDecide)
-                <span class="rounded-lg bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900 ring-1 ring-amber-200">
+                <a href="{{ route('approvals.index') }}" wire:navigate
+                   class="rounded-lg bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900 ring-1 ring-amber-200">
                     This is awaiting your decision
-                </span>
+                </a>
             @endif
 
             @if ($canWithdraw && $r->statusEnum() !== RequestStatus::Draft)

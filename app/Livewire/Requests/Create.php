@@ -130,8 +130,29 @@ class Create extends Component
 
     public string $out_of_scope = '';
 
-    public function mount(): void
+    public function mount(?ItRequest $request = null): void
     {
+        if ($request && $request->exists) {
+            /*
+             * Editing an existing request.
+             *
+             * The policy decides whether this is allowed — a draft or a returned
+             * request, by its requestor. Anything else is refused here rather than
+             * rendering a form whose save would fail later, which would waste the
+             * user's typing before telling them.
+             */
+            $this->authorize('update', $request);
+
+            $this->fillFrom($request);
+
+            if (! $request->submitted_at) {
+                // An unsubmitted draft: block 1 is where the requestor left off.
+                $this->step = 4;
+            }
+
+            return;
+        }
+
         $this->authorize('create', ItRequest::class);
 
         // Defaulted, not forced. The date is editable, but it is almost always
@@ -140,6 +161,55 @@ class Create extends Component
 
         $this->department_id = auth()->user()->department_id;
         $this->division_id = auth()->user()->division_id;
+    }
+
+    /**
+     * Load an existing request into the form.
+     *
+     * EVERY field is mapped explicitly rather than using `fill()`. A mass fill from
+     * the model would put `status`, `current_stage` and `requestor_id` into public
+     * properties — and because those are bound to the client, a crafted payload could
+     * then change them. The workflow service owns those columns and nothing in a form
+     * should be able to reach them.
+     */
+    private function fillFrom(ItRequest $request): void
+    {
+        $this->requestId = $request->id;
+
+        $this->title = $request->title ?? '';
+        $this->request_date = $request->request_date?->toDateString();
+        $this->department_id = $request->department_id;
+        $this->division_id = $request->division_id;
+        $this->project_owner_id = $request->project_owner_id;
+        $this->project_sponsor_id = $request->project_sponsor_id;
+        $this->proposed_tier_id = $request->proposed_tier_id;
+        $this->proposed_classification_id = $request->proposed_classification_id;
+
+        $this->business_need = $request->business_need ?? '';
+        $this->business_plan_status = $request->business_plan_status?->value ?? '';
+        $this->business_plan_reference = $request->business_plan_reference ?? '';
+        $this->adhoc_justification = $request->adhoc_justification ?? '';
+        $this->value_proposition = $request->value_proposition ?? '';
+
+        // `numeric` columns come back as strings from the database and the input is
+        // typed as a string, so this is passed through rather than cast — casting to
+        // float here would be the one place a money value became a float.
+        $this->budget_amount = $request->budget_amount !== null ? (string) $request->budget_amount : null;
+        $this->budget_source = $request->budget_source ?? '';
+        $this->budget_code = $request->budget_code ?? '';
+        $this->funding_type = $request->funding_type ?? '';
+        $this->proposed_start_date = $request->proposed_start_date?->toDateString();
+        $this->target_completion_date = $request->target_completion_date?->toDateString();
+        $this->forecast_resources = $request->forecast_resources ?? '';
+
+        $this->urgency = $request->urgency ?? '';
+        $this->urgency_justification = $request->urgency_justification ?? '';
+        $this->risk_summary = $request->risk_summary ?? '';
+        $this->mitigation_plan = $request->mitigation_plan ?? '';
+        $this->dependencies_constraints = $request->dependencies_constraints ?? '';
+        $this->impact_if_not_implemented = $request->impact_if_not_implemented ?? '';
+        $this->in_scope = $request->in_scope ?? '';
+        $this->out_of_scope = $request->out_of_scope ?? '';
     }
 
     /**
@@ -218,7 +288,13 @@ class Create extends Component
      */
     public function saveDraft(): void
     {
-        $this->authorize('create', ItRequest::class);
+        $existing = $this->requestId ? ItRequest::find($this->requestId) : null;
+
+        if ($existing) {
+            $this->authorize('update', $existing);
+        } else {
+            $this->authorize('create', ItRequest::class);
+        }
 
         $this->rejectInvalidValues();
 
@@ -267,15 +343,29 @@ class Create extends Component
     /** Validate everything, submit into the approval chain, and show the request. */
     public function submit(): void
     {
-        $this->authorize('create', ItRequest::class);
-
         $this->validateAll();
+
+        /*
+         * Authorised per action, not once on load.
+         *
+         * A page left open can outlive the permission that opened it, and for an
+         * EXISTING request the reason can be more concrete: it may have been submitted
+         * or returned by somebody else since the form was loaded. Authorising on load
+         * only would let a stale form save over a request that has moved on.
+         */
+        $existing = $this->requestId ? ItRequest::find($this->requestId) : null;
+
+        if ($existing) {
+            $this->authorize('update', $existing);
+        } else {
+            $this->authorize('create', ItRequest::class);
+        }
 
         $request = $this->persist(submit: true);
 
         session()->flash(
             'status',
-            "Request {$request->request_no} has been submitted to {$request->projectOwner->name} for approval.",
+            "Request {$request->request_no} has been submitted to {$request->projectOwner?->name} for approval.",
         );
 
         $this->redirectRoute('requests.show', ['request' => $request], navigate: true);
@@ -448,7 +538,27 @@ class Create extends Component
             $request->fill($attributes)->save();
 
             if ($submit) {
-                app(WorkflowService::class)->submit($request);
+                /*
+                 * WHICH ENTRY POINT DEPENDS ON WHERE THE REQUEST CAME FROM.
+                 *
+                 * A returned request is RESUMITTED — it re-enters the stage that
+                 * returned it, per BR-007. Calling `submit()` would reset it to the
+                 * Project Owner and restart the entire chain, sending it back through
+                 * approvals that already passed and making approvers re-read decisions
+                 * they have already made.
+                 *
+                 * The first version of this method called `submit()` unconditionally,
+                 * so editing a returned request silently discarded the returning
+                 * stage — and the symptom was a request appearing back at the Owner
+                 * with no explanation of why the Sponsor had to approve it twice.
+                 */
+                $service = app(WorkflowService::class);
+
+                if ($request->status === RequestStatus::ReturnedForAmendment->value) {
+                    $service->resubmit($request);
+                } else {
+                    $service->submit($request);
+                }
 
                 // Reloaded so the redirect carries the post-submission state rather
                 // than the draft state that was in memory a moment ago.

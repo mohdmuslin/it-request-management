@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\Decision;
 use App\Enums\RequestStatus;
 use App\Enums\UserRole;
 use App\Enums\WorkflowStage;
@@ -92,10 +93,21 @@ class WorkflowService
      * stage to re-enter — and the fallback would be to restart the whole chain,
      * which is what the current process does and what this design deliberately
      * improves on.
+     *
+     * WHY THE ACTION NAME IS A PARAMETER
+     *
+     * The history trail records what happened, and it has to use one vocabulary. An
+     * approval writes the decision's own value — `approved`, `rejected` — while this
+     * method's default writes the internal `return`. The two sit side by side in the
+     * same trail, so a reader sees "approved, return, approved" and reasonably
+     * wonders whether `return` and `returned` are different events.
+     *
+     * The decision service passes `returned`, the decision's own value, so every
+     * entry naming a decision uses the decision's name.
      */
-    public function returnForAmendment(ItRequest $request, string $comment): void
+    public function returnForAmendment(ItRequest $request, string $comment, string $action = 'return'): void
     {
-        DB::transaction(function () use ($request, $comment) {
+        DB::transaction(function () use ($request, $comment, $action) {
             $from = $request->current_stage;
 
             $request->forceFill([
@@ -106,7 +118,7 @@ class WorkflowService
 
             $this->recordTransition(
                 $request,
-                'return',
+                $action,
                 $from,
                 RequestStatus::ReturnedForAmendment->value,
                 $comment,
@@ -191,13 +203,29 @@ class WorkflowService
     {
         $approverId = $this->approverFor($request, $stage);
 
-        return ApprovalTask::create([
+        $task = ApprovalTask::create([
             'request_id' => $request->id,
             'stage' => $stage->value,
             'sequence' => $this->nextSequence($request, $stage),
             'approver_id' => $approverId,
             'due_at' => $this->dueDateFor($request, $stage),
         ]);
+
+        /*
+         * Notified AFTER the transaction's caller commits, not here.
+         *
+         * `notifyAssignment` writes a notification row, and doing that inside the
+         * same transaction would roll the notification back with the task if anything
+         * later failed — leaving a task nobody was told about. Laravel's
+         * `afterCommit` is not used because this service is also called from
+         * contexts with no transaction; the notification is simply sent last, and a
+         * failure to notify never prevents the task existing.
+         */
+        if (config('itrequest.queue.notify_on_assignment')) {
+            app(NotificationService::class)->notifyAssignment($task);
+        }
+
+        return $task;
     }
 
     /** The due date for a stage, using the configured target and the business calendar. */
@@ -269,6 +297,56 @@ class WorkflowService
             ->whereHas('roles', fn ($q) => $q->where('name', $role->value))
             ->orderBy('id')
             ->value('id');
+    }
+
+    /**
+     * The approval chain is complete; hand the request to governance.
+     *
+     * WHY THIS IS NOT `close()`
+     *
+     * Reaching the end of the Owner and Sponsor approvals means the request has
+     * cleared its named approvers. It does NOT mean the request is finished — the
+     * completeness review, technical recommendations, consolidation and possibly a
+     * committee decision all follow (Phase F), and BR-006 requires those before
+     * closure.
+     *
+     * An earlier draft called `close()` here, which would have marked a request
+     * Closed the moment its Sponsor approved — skipping the entire governance
+     * process while looking like a successful approval. The status is set from the
+     * DECISION instead, so "approved with conditions" is visibly different from a
+     * clean approval.
+     */
+    public function completeApprovals(ItRequest $request, Decision $decision): void
+    {
+        DB::transaction(function () use ($request, $decision) {
+            $from = $request->current_stage;
+
+            $status = $decision === Decision::ApprovedWithConditions
+                ? RequestStatus::ApprovedWithConditions
+                : RequestStatus::PendingCompletenessReview;
+
+            $request->forceFill([
+                'status' => $status->value,
+                /*
+                 * The stage advances to the completeness review even though no task
+                 * is created for it here.
+                 *
+                 * Phase F owns that stage. Leaving `current_stage` on the Sponsor
+                 * would mean the request reads as still awaiting a Sponsor decision
+                 * after that decision was made — and the aging report would count it
+                 * against the wrong stage.
+                 */
+                'current_stage' => WorkflowStage::CompletenessReview->value,
+            ])->save();
+
+            $this->recordTransition(
+                $request,
+                'approvals_complete',
+                $from,
+                WorkflowStage::CompletenessReview->value,
+                'Owner and Sponsor approvals complete; handed to governance.',
+            );
+        });
     }
 
     /** Sequence within a stage, so a stage can require more than one decision. */
