@@ -127,7 +127,7 @@ class Index extends Component
                 actor: auth()->user(),
                 decision: $chosen,
                 comments: $this->comments ?: null,
-                conditions: $this->conditions ?: [],
+                conditions: $this->conditions ?: null,
             );
         } catch (\RuntimeException $e) {
             /*

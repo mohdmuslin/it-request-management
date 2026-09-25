@@ -48,8 +48,18 @@ beforeEach(function () {
     ]);
 });
 
-/** Sign in as the user and decide the request's current stage. */
-function decide($decision, ?string $comments = null, array $conditions = [])
+/**
+ * Sign in as the user and decide the request's current stage.
+ *
+ * `$conditions` is a STRING, matching the service and the `text` column.
+ *
+ * This helper declared `array $conditions = []` and passed an array, which is the only
+ * reason the whole suite stayed green while the approvals screen was broken: the helper
+ * agreed with the wrong signature, and every test went through the helper. When a test
+ * helper and the production caller disagree about a parameter's type, the helper is
+ * testing the helper.
+ */
+function decide($decision, ?string $comments = null, ?string $conditions = null)
 {
     return app(WorkflowDecisionService::class)->decide(
         request: test()->request->fresh(),
@@ -181,7 +191,7 @@ it('refuses an approval with conditions that records no conditions', function ()
     $this->workflow->submit($this->request);
     $this->actingAs($this->owner);
 
-    expect(fn () => decide(Decision::ApprovedWithConditions, 'Fine', []))
+    expect(fn () => decide(Decision::ApprovedWithConditions, 'Fine', null))
         ->toThrow(RuntimeException::class, 'requires the conditions');
 });
 
@@ -189,9 +199,11 @@ it('records the conditions on the task', function () {
     $this->workflow->submit($this->request);
     $this->actingAs($this->owner);
 
-    $task = decide(Decision::ApprovedWithConditions, 'Approved subject to the following.', [
+    $task = decide(
+        Decision::ApprovedWithConditions,
+        'Approved subject to the following.',
         'Vendor must provide a 3-year support commitment.',
-    ]);
+    );
 
     expect($task->conditions)->toContain('3-year support commitment');
 });
@@ -215,9 +227,11 @@ it('still advances the request when the owner approves with conditions', functio
     $this->workflow->submit($this->request);
     $this->actingAs($this->owner);
 
-    decide(Decision::ApprovedWithConditions, 'Approved subject to the following.', [
+    decide(
+        Decision::ApprovedWithConditions,
+        'Approved subject to the following.',
         'Vendor must provide a 3-year support commitment.',
-    ]);
+    );
     $this->request->refresh();
 
     expect($this->request->status)->toBe(RequestStatus::PendingProjectSponsor->value)

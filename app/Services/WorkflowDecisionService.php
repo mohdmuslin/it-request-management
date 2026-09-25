@@ -49,7 +49,20 @@ class WorkflowDecisionService
         User $actor,
         Decision $decision,
         ?string $comments = null,
-        array $conditions = [],
+        /*
+         * A STRING, not an array.
+         *
+         * This was declared `array $conditions = []` while every single caller passed a
+         * string — the approvals screen, the committee path, and every test. PHP threw a
+         * TypeError the moment somebody chose "approved with conditions", so the one
+         * decision type that carries conditions was the only one that could not be made.
+         *
+         * The column is `text`, conditions are a sentence rather than a list, and
+         * `CommitteeDecision` already took a string — so the type on this one method was
+         * the outlier. Changing it to match everything else is the fix; changing the
+         * callers would have meant inventing a structure for a sentence.
+         */
+        ?string $conditions = null,
     ): ApprovalTask {
         $task = $request->pendingApprovalTask;
 
@@ -133,7 +146,7 @@ class WorkflowDecisionService
      * Checked here as well as in the form. The form is a convenience; this is the
      * rule.
      */
-    private function assertDecisionIsAllowed(Decision $decision, ?string $comments, array $conditions): void
+    private function assertDecisionIsAllowed(Decision $decision, ?string $comments, ?string $conditions): void
     {
         if ($decision->requiresComment() && blank($comments)) {
             throw new \RuntimeException(
