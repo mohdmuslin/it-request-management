@@ -336,11 +336,52 @@ the audit trail is complete.
 | `itrequest:deploy` — routine post-upload steps, safe to repeat | ✅ Done |
 | `itrequest:deploy-check` — read-only pre-flight validator | ✅ Done |
 | `itrequest:set-password` — the only password reset without a shell | ✅ Done |
+| `itrequest:make-user` — create an account when nobody can sign in | ✅ Done |
 | `.github/workflows/deploy.yml` — build, verify, upload, arm the hook | ✅ Done |
 | `docs/deployment.md` — runbook | ✅ Done |
-| 288 tests passing, Pint clean | ✅ Done |
-| UAT run-through against the live site | ⬜ **Blocked on the email gate** |
-| Administrator and user guides | ⬜ Next |
+| `docs/administrator-guide.md` | ✅ Done |
+| `docs/user-guide.md` | ✅ Done |
+| `docs/compliance-matrix.md` — final status per requirement | ✅ Done |
+| `itrequest:uat` — the 15 acceptance scenarios, executable | ✅ Done |
+| 310 tests passing, Pint clean | ✅ Done |
+| UAT run-through against the live site | ⬜ Blocked on the email gate |
+| **Document upload (FR-006)** | ⬜ **Not built** — see below |
+| **Recommendations and Audit log screens** | ⬜ **Placeholders** — see below |
+
+#### What the matrix review found
+
+Writing the compliance matrix's final status meant reading every requirement against what
+actually exists, and three things it had been reporting as met were not.
+
+**1. Documents were never built (FR-006).** The `attachments` table, the `Attachment` model,
+the MIME allow-list, the size cap and the private storage directory all exist — and there is
+no upload action and no download action anywhere in the application. The request detail screen
+eager-loads `attachments` and the view never renders them. The wizard's document step, listed
+in `interface.md` §4 as step 5 of 5, is not one of the four steps that exist.
+
+The consequence is worse than a missing feature. `GovernanceService::closureBlockers()` returns
+a blocker reading *"All mandatory decisions and documentation are recorded"* and checks only
+the decisions — so **BR-006's documentation half is unenforced** and a request closes with no
+supporting evidence at all. The check is honest about its intent and does not implement it,
+which is the failure mode that survives review: the code says the right thing.
+
+**2. Two role landing pages are placeholders.** `UserRole::landingRoute()` sends an Auditor to
+`admin.audit.index` and a Technical Reviewer to `recommendations.index`. Both render a panel
+saying the screen arrives in a later phase. **So an Auditor signs in and is told the screen
+does not exist yet** — while the audit trail it would show is complete and append-only.
+
+**3. Autosave and editable templates were never built.** `interface.md` §4 specifies autosave
+every 30 seconds; there is only the explicit **Save draft** button. FR-013 covers templates as
+well as reference data; templates are fixed strings.
+
+Each is now declared in `compliance-matrix.md` as D-7, D-8 and D-9 — **incomplete
+requirements, not deferrals**, because a deferral is a decision and these were oversights.
+
+> **Why this is recorded rather than quietly fixed.** The three gaps are small and could have
+> been closed without anyone noticing they had been open. A status table that reported them as
+> done is what a handover would have carried forward, and the next person to read it would have
+> assumed the documents were somewhere. The value of the matrix is that it can be wrong out
+> loud.
 
 **The installer closes a gap that would have made a production install unusable.** `DemoUserSeeder`
 refuses outside `local`/`testing` — deliberately, because it creates accounts with a known password

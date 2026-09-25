@@ -10,6 +10,8 @@ use App\Models\WorkflowStage;
 use App\Services\BusinessCalendar;
 use Database\Seeders\ReferenceDataSeeder;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 
 /**
  * The deployment commands.
@@ -277,4 +279,110 @@ it('reports an account that holds no role when showing state', function () {
     $this->artisan('itrequest:set-password', ['email' => $user->email, '--show' => true])
         ->expectsOutputToContain('NONE')
         ->assertSuccessful();
+});
+
+// ---- itrequest:make-user ---------------------------------------------------
+
+it('creates an account from the command line', function () {
+    /*
+     * The route back in when the administrator screen cannot be reached — because
+     * nobody can sign in. `itrequest:install` creates one administrator and refuses to
+     * run again, so without this a lost password means SQL or a restored backup.
+     */
+    $this->artisan('itrequest:make-user', [
+        'email' => 'newcomer@example.com',
+        '--name' => 'New Comer',
+        '--employee-no' => 'E-4242',
+    ])->assertSuccessful();
+
+    $user = User::where('email', 'newcomer@example.com')->firstOrFail();
+
+    expect($user->name)->toBe('New Comer')
+        ->and($user->employee_no)->toBe('E-4242')
+        ->and($user->is_active)->toBeTrue();
+});
+
+it('gives a command-line account no role by default', function () {
+    /*
+     * Escalation has to be something somebody types. A `--role` default would mean every
+     * batch-created account arrived able to do something.
+     */
+    $this->artisan('itrequest:make-user', ['email' => 'plain@example.com'])->assertSuccessful();
+
+    expect(User::where('email', 'plain@example.com')->firstOrFail()->roles()->count())->toBe(0);
+});
+
+it('grants a requested role', function () {
+    $this->artisan('itrequest:make-user', [
+        'email' => 'reviewer@example.com',
+        '--role' => ['governance_reviewer'],
+    ])->assertSuccessful();
+
+    expect(User::where('email', 'reviewer@example.com')->firstOrFail()->hasRole(UserRole::GovernanceReviewer))->toBeTrue();
+});
+
+it('refuses an unknown role rather than creating an account that cannot do anything', function () {
+    /*
+     * A typo in a batch load — `--role=govenance_reviewer` — would otherwise create the
+     * account silently with no role, and the failure would surface as a person unable to
+     * do their job days later. Failing here names the typo while somebody is looking at
+     * it.
+     */
+    $this->artisan('itrequest:make-user', [
+        'email' => 'typo@example.com',
+        '--role' => ['governance_reviwer'],
+    ])->assertFailed();
+
+    expect(User::where('email', 'typo@example.com')->exists())->toBeFalse();
+});
+
+it('refuses a duplicate email rather than failing on the database', function () {
+    // The unique index would raise an error naming a constraint. On cron that is an
+    // email to nobody and a log line that reads like a crash.
+    $this->artisan('itrequest:make-user', ['email' => $this->admin->email])
+        ->expectsOutputToContain('already exists')
+        ->assertFailed();
+
+    expect(User::where('email', $this->admin->email)->count())->toBe(1);
+});
+
+it('derives a readable name from the email when none is given', function () {
+    $this->artisan('itrequest:make-user', ['email' => 'siti.nurhaliza@example.com'])->assertSuccessful();
+
+    expect(User::where('email', 'siti.nurhaliza@example.com')->firstOrFail()->name)->toBe('Siti Nurhaliza');
+});
+
+it('records the creation in the audit trail', function () {
+    $this->artisan('itrequest:make-user', ['email' => 'traced@example.com'])->assertSuccessful();
+
+    $this->assertDatabaseHas('audit_logs', ['event' => 'user.created']);
+});
+
+it('writes the generated password to the log as well as printing it', function () {
+    /*
+     * Cron output on this host is frequently discarded. Without the log line the
+     * password would exist nowhere and the account would be locked from birth — which
+     * is a failure that only shows up later, when somebody tries to sign in.
+     */
+    Log::spy();
+
+    $this->artisan('itrequest:make-user', ['email' => 'logged@example.com'])->assertSuccessful();
+
+    // Asserted through the spy rather than by reading the log file: the file is real,
+    // shared with the rest of the suite, and a test that greps it can pass on a line
+    // another test wrote.
+    Log::shouldHaveReceived('warning')
+        ->withArgs(fn (string $message, array $context) => str_contains($message, 'ACCOUNT CREATED')
+            && $context['email'] === 'logged@example.com'
+            && $context['password'] !== '')
+        ->once();
+});
+
+it('accepts a supplied password so a batch load can be scripted', function () {
+    $this->artisan('itrequest:make-user', [
+        'email' => 'scripted@example.com',
+        '--password' => 'A-supplied-password-123',
+    ])->assertSuccessful();
+
+    expect(Hash::check('A-supplied-password-123', User::where('email', 'scripted@example.com')->value('password')))->toBeTrue();
 });

@@ -21,6 +21,7 @@ use App\Services\ReportingService;
 use App\Services\RequestNumberService;
 use Carbon\CarbonImmutable;
 use Database\Seeders\ReferenceDataSeeder;
+use Illuminate\Support\Facades\Hash;
 use Livewire\Livewire;
 
 /**
@@ -523,4 +524,125 @@ it('filters users by role', function () {
         ->set('role', UserRole::Administrator->value);
 
     expect($component->viewData('users')->total())->toBe(1);
+});
+it('creates an account with a generated password', function () {
+    /*
+     * The gap this closes: there was NO way to create an account at all. The only
+     * path was the one-shot installer, which refuses to run once the application has
+     * data — so a second employee could never be given access, and the system would
+     * have been a demonstration rather than something anybody could use.
+     */
+    $this->actingAs($this->admin);
+
+    Livewire::test(Users::class)
+        ->call('startCreating')
+        ->set('new_name', 'Nurul Aina')
+        ->set('new_email', 'nurul.aina@example.test')
+        ->set('new_employee_no', 'E-10231')
+        ->call('createUser')
+        ->assertHasNoErrors()
+        ->assertSet('creating', false);
+
+    $created = User::where('email', 'nurul.aina@example.test')->firstOrFail();
+
+    expect($created->name)->toBe('Nurul Aina')
+        ->and($created->employee_no)->toBe('E-10231')
+        ->and($created->is_active)->toBeTrue();
+});
+
+it('shows the generated password once and never stores it in the clear', function () {
+    /*
+     * The password is the ONLY value here that cannot be recovered, so it is asserted
+     * on both sides: it is shown (or the administrator cannot pass it on) and it is
+     * hashed (or the account is compromised at rest).
+     */
+    $this->actingAs($this->admin);
+
+    $component = Livewire::test(Users::class)
+        ->call('startCreating')
+        ->set('new_name', 'Ishak Rahman')
+        ->set('new_email', 'ishak@example.test')
+        ->call('createUser');
+
+    $password = $component->get('newPassword');
+
+    expect($password)->toBeString()->not->toBeEmpty();
+
+    // Stored hashed, not as typed.
+    $this->assertDatabaseMissing('users', ['password' => $password]);
+    expect(Hash::check($password, User::where('email', 'ishak@example.test')->value('password')))->toBeTrue();
+
+    // And it can be dismissed, so it does not linger in component state.
+    $component->call('dismissPassword')->assertSet('newPassword', '');
+});
+
+it('gives a new account no roles', function () {
+    /*
+     * An account with no role can sign in and reach almost nothing — the safe
+     * default. Granting a role on the create form would make "add an account" and
+     * "decide what somebody may do" the same action, and that is one field placement
+     * away from creating an administrator by accident.
+     */
+    $this->actingAs($this->admin);
+
+    Livewire::test(Users::class)
+        ->call('startCreating')
+        ->set('new_name', 'Fresh Start')
+        ->set('new_email', 'fresh@example.test')
+        ->call('createUser')
+        ->assertHasNoErrors();
+
+    expect(User::where('email', 'fresh@example.test')->firstOrFail()->roles()->count())->toBe(0);
+});
+
+it('refuses a second account with the same email address', function () {
+    // Sign-in is by email and notifications are addressed to it, so a duplicate is a
+    // notification delivered to the wrong person.
+    $this->actingAs($this->admin);
+
+    Livewire::test(Users::class)
+        ->call('startCreating')
+        ->set('new_name', 'Impostor')
+        ->set('new_email', $this->requestor->email)
+        ->call('createUser')
+        ->assertHasErrors(['new_email']);
+
+    expect(User::where('email', $this->requestor->email)->count())->toBe(1);
+});
+
+it('refuses a duplicate employee number', function () {
+    $this->actingAs($this->admin);
+
+    $this->requestor->update(['employee_no' => 'E-555']);
+
+    Livewire::test(Users::class)
+        ->call('startCreating')
+        ->set('new_name', 'Second Holder')
+        ->set('new_email', 'second@example.test')
+        ->set('new_employee_no', 'E-555')
+        ->call('createUser')
+        ->assertHasErrors(['new_employee_no']);
+});
+
+it('records the creation in the audit trail', function () {
+    // Who created an account, and when, is the first question asked when an
+    // unexplained login appears.
+    $this->actingAs($this->admin);
+
+    Livewire::test(Users::class)
+        ->call('startCreating')
+        ->set('new_name', 'Audited Person')
+        ->set('new_email', 'audited@example.test')
+        ->call('createUser')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('audit_logs', ['event' => 'user.created']);
+});
+
+it('refuses account creation to a non-administrator', function () {
+    // A Livewire action is reachable directly, so the guard is on the ACTION and not
+    // only on the page that renders the button.
+    $this->actingAs($this->requestor);
+
+    Livewire::test(Users::class)->assertForbidden();
 });

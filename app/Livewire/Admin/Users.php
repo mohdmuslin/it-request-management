@@ -9,6 +9,7 @@ use App\Models\ReviewUnit;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\AuditService;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -46,6 +47,33 @@ class Users extends Component
 
     /** The account being edited, if the panel is open. */
     public ?int $editingUserId = null;
+
+    /*
+     * The new-account panel.
+     *
+     * Held separately from `editingUserId` rather than as "editing a null user",
+     * because the two paths differ in a way that matters: editing links an existing
+     * account to a department, while creating also sets a password and the identity
+     * that cannot be changed afterwards.
+     */
+    public bool $creating = false;
+
+    public string $new_name = '';
+
+    public string $new_email = '';
+
+    public string $new_employee_no = '';
+
+    /**
+     * The generated password, shown once after the account is created.
+     *
+     * Held in component state only until the administrator dismisses it — never
+     * written to a flash message, which would survive in the session, and never
+     * emailed, because the account may not have a working mailbox yet.
+     */
+    public string $newPassword = '';
+
+    public string $newPasswordFor = '';
 
     public ?int $department_id = null;
 
@@ -102,6 +130,102 @@ class Users extends Component
         $this->reset('department_id', 'division_id', 'manager_id', 'roles', 'units');
         $this->is_active = true;
         $this->resetErrorBag();
+    }
+
+    /** Open the new-account panel and clear anything left from the last one. */
+    public function startCreating(): void
+    {
+        abort_unless(auth()->user()->isAdministrator(), 403);
+
+        $this->cancelEdit();
+
+        $this->creating = true;
+        $this->reset('new_name', 'new_email', 'new_employee_no');
+        $this->resetErrorBag();
+    }
+
+    public function cancelCreating(): void
+    {
+        $this->creating = false;
+        $this->reset('new_name', 'new_email', 'new_employee_no');
+        $this->resetErrorBag();
+    }
+
+    /**
+     * Create an account with a generated password.
+     *
+     * WHY THE PASSWORD IS GENERATED AND NOT CHOSEN
+     *
+     * An administrator typing a password for somebody else knows it. Every account
+     * made that way starts with two people holding the same credential and no way to
+     * tell which of them did something. A generated password is shown once to the
+     * administrator, who passes it on, and the account holder changes it — the
+     * credential is never one somebody else chose.
+     *
+     * `Str::password(24)` matches what `itrequest:set-password` uses, so there is one
+     * password strength in the application rather than two.
+     *
+     * WHY THE EMAIL IS THE IDENTITY
+     *
+     * Sign-in is by email, and it is what every notification is addressed to. Two
+     * accounts sharing one address means a notification that reaches the wrong person,
+     * so it is unique at the database and checked here for a readable message.
+     */
+    public function createUser(): void
+    {
+        abort_unless(auth()->user()->isAdministrator(), 403);
+
+        $this->validate([
+            'new_name' => ['required', 'string', 'max:255'],
+            'new_email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'new_employee_no' => ['nullable', 'string', 'max:50', 'unique:users,employee_no'],
+        ], [
+            'new_email.unique' => 'An account already exists with that email address.',
+            'new_employee_no.unique' => 'That employee number is already in use.',
+        ], attributes: [
+            'new_name' => 'name',
+            'new_email' => 'email address',
+            'new_employee_no' => 'employee number',
+        ]);
+
+        $password = Str::password(24);
+
+        $user = User::create([
+            'name' => $this->new_name,
+            'email' => $this->new_email,
+            'employee_no' => $this->new_employee_no !== '' ? $this->new_employee_no : null,
+            'password' => $password,
+            'is_active' => true,
+        ]);
+
+        /*
+         * Created with NO roles, deliberately.
+         *
+         * An account with no role can sign in and reach almost nothing, which is the
+         * safe default. Granting a role at creation time would mean the create form
+         * also decides what somebody may do, and the two decisions being separate is
+         * what stops "create an account" quietly becoming "create an administrator".
+         */
+        app(AuditService::class)->record(
+            event: 'user.created',
+            subject: $user,
+            old: null,
+            new: ['name' => $user->name, 'email' => $user->email, 'is_active' => true],
+        );
+
+        $this->newPassword = $password;
+        $this->newPasswordFor = $user->email;
+
+        $this->creating = false;
+        $this->reset('new_name', 'new_email', 'new_employee_no');
+
+        $this->flash = "Account created for {$user->name}. Grant a role below before they sign in.";
+    }
+
+    /** Drop the password from component state once the administrator has it. */
+    public function dismissPassword(): void
+    {
+        $this->reset('newPassword', 'newPasswordFor');
     }
 
     public function save(): void

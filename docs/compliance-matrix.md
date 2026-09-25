@@ -16,17 +16,17 @@ be made and justified. Every ⚪ below has a reason and a production plan.
 |---|---|---|---|
 | FR-001 | Sign in using approved enterprise identity and SSO | 🟡 | `IdentityProvider` contract with `LocalProvider` (POC) and `EntraProvider` (production). **Entra deferred**, seam built. `architecture.md` §6 |
 | FR-002 | Retrieve or maintain requestor department, division and reporting data | ✅ | Auto-filled from the identity provider; snapshotted on the request. `design.md` §3.1 |
-| FR-003 | Save incomplete requests as drafts | ✅ | `Draft` state; autosave + explicit Save Draft. `interface.md` §4 |
+| FR-003 | Save incomplete requests as drafts | ✅ | `Draft` state and an explicit **Save draft** at every step. **Autosave is not implemented** — see D-9. `interface.md` §4 |
 | FR-004 | Validate mandatory and conditional fields before submission | ✅ | FormRequest + Livewire rules; the business-plan conditional block. `interface.md` §4 |
 | FR-005 | Unique configurable request number | ✅ | Generated on submit, immutable. `database-design.md` §5 |
-| FR-006 | Upload, categorise, preview and download authorised documents | 🟡 | Upload, categorise, download ✅. **Preview deferred** — inline preview of arbitrary types is a security surface needing care |
+| FR-006 | Upload, categorise, preview and download authorised documents | ⛔ | **Not built.** See D-7 |
 | FR-007 | Support approve, reject and return-for-amendment | ✅ | The transition table. `design.md` §1.3 |
 | FR-008 | Multiple units submit independent recommendations without overwriting | ✅ | `recommendations` with `version_no`. `database-design.md` §5 |
 | FR-009 | Route by tier, classification, decision and governance route | ✅ | Route set at consolidation; `requires_committee` drives Full only |
 | FR-010 | Notify users of assignments, decisions, reminders and escalations | 🟡 | Designed and built, **but email is unproven on this host**. `architecture.md` §9 |
 | FR-011 | Every material action recorded with actor and timestamp | ✅ | `workflow_histories` + `audit_logs`, in-transaction |
 | FR-012 | Filters, dashboards and exports | ✅ | Reports module |
-| FR-013 | Administrators manage reference data and templates | ✅ | Administration module |
+| FR-013 | Administrators manage reference data and templates | 🟡 | Reference data, calendar and users are built. **Notification templates are fixed in code, not editable** — see D-9 |
 | FR-014 | Temporary delegation preserving original and acting approvers | ✅ | `approval_tasks.delegated_from_id`. `design.md` §2.2 |
 | FR-015 | Search by number, title, status, owner, unit, tier, date | 🟡 | Filters on all listed fields. **Full-text search deferred**; `LIKE` at POC volumes |
 
@@ -45,7 +45,7 @@ be made and justified. Every ⚪ below has a reason and a production plan.
 | NFR-007 | Documented standards, automated tests, modular code, controlled configuration | ✅ | Pest feature tests, Pint, services layer, config-driven behaviour |
 | NFR-008 | Reproducible across development, test and production | ✅ | Migrations, seeders, installer command, CI |
 | NFR-009 | Application logs, security logs, health checks, queue monitoring, alerting | 🟡 | Logs, `/up`, failed-jobs table. **Alerting deferred** — no external monitoring service |
-| NFR-010 | Data protection per Client requirements and applicable obligations | 🟡 | Private document storage, access-controlled, audited. Retention and disposal policy deferred |
+| NFR-010 | Data protection per Client requirements and applicable obligations | 🟡 | Access-controlled storage and audit. **No documents are uploaded, so there is no document protection to test** — D-7. Retention and disposal policy deferred |
 
 ---
 
@@ -58,7 +58,7 @@ be made and justified. Every ⚪ below has a reason and a production plan.
 | BR-003 | Conditional documents and fields driven by tier and classification | ✅ | Business-plan conditional block; `classification_review_units` |
 | BR-004 | The approver cannot modify the requestor's justification | ✅ | The approval action writes `approval_tasks` only |
 | BR-005 | Recommendations versioned or preserved, never overwritten | ✅ | `version_no` inserts a new row |
-| BR-006 | Closure requires all mandatory decisions and documentation | ✅ | Checked before the `close` transition |
+| BR-006 | Closure requires all mandatory decisions and documentation | 🟡 | **Decisions enforced; documentation not.** See D-7 |
 | BR-007 | A returned request resumes at the configured stage | ✅ | Returning stage recorded on the transition |
 | BR-008 | Delegated decisions capture delegated-from and acting users | ✅ | `delegated_from_id` separate from `approver_id` |
 | BR-009 | System-managed fields not editable through ordinary screens | ✅ | Not mass-assignable; not rendered; changes audited |
@@ -68,22 +68,22 @@ be made and justified. Every ⚪ below has a reason and a production plan.
 
 ## Acceptance Scenarios (from brief §9.2)
 
-| ID | Scenario | Status |
-|---|---|---|
-| UAT-001 | Requestor saves and resumes a draft | ✅ |
-| UAT-002 | Mandatory and conditional validation prevents incomplete submission | ✅ |
-| UAT-003 | Unique request number generated without duplication | ✅ |
-| UAT-004 | Project Owner approves and the workflow advances | ✅ |
-| UAT-005 | Project Sponsor rejects with mandatory comments | ✅ |
-| UAT-006 | Governance returns an incomplete request for amendment | ✅ |
-| UAT-007 | Resubmitted request resumes at the correct stage | ✅ |
-| UAT-008 | Multiple technical units submit separate recommendations | ✅ |
-| UAT-009 | Consolidator records conditions and the governance route | ✅ |
-| UAT-010 | A Full-route request reaches the committee decision stage | ✅ |
-| UAT-011 | An unauthorised user cannot view or decide a restricted request | ✅ |
-| UAT-012 | The audit trail contains actor, timestamp, transition and comments | ✅ |
-| UAT-013 | Reminder and escalation triggered according to configuration | 🟡 | Depends on email working on this host |
-| UAT-014 | Dashboard totals reconcile with transactional records | ✅ |
+| ID | Scenario | Status | Note |
+|---|---|---|---|
+| UAT-001 | Requestor saves and resumes a draft | ✅ | |
+| UAT-002 | Mandatory and conditional validation prevents incomplete submission | 🟡 | Conditional **fields** enforced; conditional **documents** cannot be — D-7 |
+| UAT-003 | Unique request number generated without duplication | ✅ | |
+| UAT-004 | Project Owner approves and the workflow advances | ✅ | |
+| UAT-005 | Project Sponsor rejects with mandatory comments | ✅ | |
+| UAT-006 | Governance returns an incomplete request for amendment | ✅ | The **return** works and is enforced; the "missing attachment" case cannot arise, because there are no attachments — D-7 |
+| UAT-007 | Resubmitted request resumes at the correct stage | ✅ | |
+| UAT-008 | Multiple technical units submit separate recommendations | ✅ | |
+| UAT-009 | Consolidator records conditions and the governance route | ✅ | |
+| UAT-010 | A Full-route request reaches the committee decision stage | ✅ | |
+| UAT-011 | An unauthorised user cannot view or decide a restricted request | ✅ | |
+| UAT-012 | The audit trail contains actor, timestamp, transition and comments | ✅ | The trail is complete; the **screen** that displays it globally is a placeholder — D-8 |
+| UAT-013 | Reminder and escalation triggered according to configuration | 🟡 | Scheduled command and idempotency work; delivery depends on email being configured on this host |
+| UAT-014 | Dashboard totals reconcile with transactional records | ✅ | |
 | UAT-015 | Backup restored and validated in a controlled test | ⚪ | Deferred to production; a host-level operation |
 
 ---
@@ -91,7 +91,14 @@ be made and justified. Every ⚪ below has a reason and a production plan.
 ## Declared Deviations
 
 The brief permits alternatives with justification and requires material deviations to be stated
-(§2.1, §11.1). Six are declared, all driven by the hosting platform or by POC scope.
+(§2.1, §11.1). Six are declared as deviations, and three more — D-7, D-8 and D-9 — as
+**incomplete requirements**, recorded because a matrix that reports a missing requirement as
+satisfied is worse than one that reports nothing.
+
+**D-7 to D-9 are not deferrals.** A deferral is a decision that something is out of scope for
+the POC. These are requirements claimed as met that are not, or additions in the interface
+specification presented as though they were built. They are listed so the gap is visible and
+can be scheduled rather than discovered.
 
 ### D-1 — Entra ID SSO deferred
 
@@ -152,6 +159,40 @@ The brief permits alternatives with justification and requires material deviatio
 | **Justification** | The approved hosting is cPanel/LiteSpeed. The brief allows "an approved equivalent" |
 | **Mitigation** | Directory listing disabled via `Options -Indexes` **committed in `public/.htaccess`**; the document root points at `public/`, so application files are not web-reachable |
 | **Production plan** | Portable by design — no server-specific code. Paths and URL in `.env` only |
+
+### D-7 — Document upload not built
+
+| | |
+|---|---|
+| **Brief requires** | FR-006 — users upload, categorise, preview and download authorised documents. BR-006 — closure requires all mandatory decisions **and documentation** |
+| **POC delivers** | The schema, the model, the configuration, the private storage directory and the authorisation design are in place. **The upload and download actions are not** |
+| **Justification** | None. This is an **incomplete requirement**, recorded here rather than described as a deferral. The brief's §5 lists "Documents and Review" as a wizard step and §9.2's UAT-001 through UAT-015 depend on documents at three points — UAT-002 (conditional documents), UAT-006 (returned for a missing attachment) and UAT-006/UAT-009 (conditions evidenced) |
+| **What exists** | `attachments` table with checksum and private storage path; `Attachment` model with a human-readable size helper; `config('itrequest.attachments')` with a narrow MIME allow-list, a 20 MB cap and a documented deviation for malware scanning; `storage/app/private/attachments` created by both the installer and the deploy; `deploy-check` warns when the directory is missing |
+| **What does not** | Any way to attach a file, and any way to retrieve one. The request detail screen eager-loads `attachments` and never renders them |
+| **Consequence** | `GovernanceService::closureBlockers()` states it requires "all mandatory decisions and documentation" and checks only the decisions. A request can be closed with no documents at all. The message is honest about the intent and the check does not implement it — **BR-006 is half-enforced** |
+| **Effort to close** | Small and well-contained: a Livewire upload on the wizard's final step, a download action authorised through `ItRequestPolicy`, a document list on the detail screen, and one extra clause in `closureBlockers()`. The schema, storage layout and configuration already accommodate it |
+| **Production plan** | Build before go-live. This is a stated requirement, not an enhancement |
+
+### D-8 — Two screens remain placeholders
+
+| | |
+|---|---|
+| **Brief requires** | FR-012 (dashboards) and NFR-006 (immutable critical records, readable) |
+| **POC delivers** | `Admin\AuditLog` and `Recommendations\Index` render a placeholder panel describing what they will contain. **Both are role landing pages** — `UserRole::landingRoute()` sends an Auditor and a Technical Reviewer to them on sign-in |
+| **Justification** | None. Recorded rather than deferred |
+| **Mitigation** | Neither blocks the underlying work. A Technical Reviewer can file a recommendation from the request detail screen, which is where the action lives. An Auditor's read-only access is enforced by the policies regardless of this screen |
+| **Consequence** | An Auditor signs in and is shown a screen that says the screen has not been built. That is a poor first impression and it understates a working audit trail — the data and the append-only guarantees are real |
+| **Production plan** | Build both. The audit log is a filtered list of an existing table; the recommendations index is a filtered list of an existing table |
+
+### D-9 — Autosave and editable templates not built
+
+| | |
+|---|---|
+| **Brief requires** | FR-003 (save as draft) and FR-013 (administrators manage reference data **and templates**) |
+| **POC delivers** | Draft saving works through an explicit **Save draft** button on every step — the requirement as written is met. **The interface specification's autosave-every-30-seconds is not implemented**, and notification templates are fixed strings in `NotificationService`, not editable |
+| **Justification** | The brief's FR-003 requires drafts, not autosave; autosave is an addition in `interface.md` §4. Editable templates cost a screen, a table and a templating engine for four messages whose wording has not yet been agreed with the business — writing them before the wording exists would be premature |
+| **Consequence** | A requestor who closes the tab without pressing **Save draft** loses what they typed. Nothing else depends on either gap |
+| **Production plan** | Autosave is a small addition to a component that already has the save path. Templates need the final wording first, which is a business input |
 
 ---
 

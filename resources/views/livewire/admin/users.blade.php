@@ -14,6 +14,31 @@
         </p>
     @endif
 
+    {{--
+        The generated password, shown ONCE.
+
+        This is the only moment this value can be read — it is stored hashed and no
+        screen can reveal it again. So the panel says that plainly, and offers a copy
+        target, because a 24-character string transcribed by eye is a support call
+        waiting to happen.
+    --}}
+    @if ($newPassword)
+        <div class="mt-4 rounded-xl bg-white p-5 shadow-sm ring-2 ring-indigo-300" role="status">
+            <h2 class="text-sm font-semibold text-slate-900">Password for {{ $newPasswordFor }}</h2>
+            <p class="mt-1 text-sm text-slate-600">
+                Copy this now and pass it to the account holder. It is stored hashed and
+                <strong>cannot be shown again</strong>. They should change it after signing in.
+            </p>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+                <code class="select-all rounded-lg bg-slate-900 px-3 py-2 font-mono text-sm text-slate-100">{{ $newPassword }}</code>
+                <button type="button" wire:click="dismissPassword"
+                        class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                    I have it — hide
+                </button>
+            </div>
+        </div>
+    @endif
+
     {{-- The last administrator is a lockout risk worth making visible. --}}
     @if ($canBootstrapAdmin <= 1)
         <p class="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
@@ -44,7 +69,68 @@
                 @endforeach
             </select>
         </div>
+
+        <button type="button" wire:click="startCreating"
+                class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+            Add an account
+        </button>
     </div>
+
+    {{-- ---- The new-account panel ---------------------------------------- --}}
+    @if ($creating)
+        <div class="mt-5 rounded-xl bg-white p-5 shadow-sm ring-2 ring-indigo-200">
+            <h2 class="text-base font-semibold text-slate-900">New account</h2>
+            <p class="mt-1 text-sm text-slate-600">
+                A password is generated and shown to you once. The account starts with
+                <strong>no roles</strong> — grant them below, because a role is what decides
+                what somebody can do.
+            </p>
+
+            <div class="mt-4 grid gap-4 sm:grid-cols-3">
+                <div>
+                    <label for="new_name" class="block text-sm font-medium text-slate-700">Name</label>
+                    <input id="new_name" type="text" wire:model="new_name" autocomplete="off"
+                           class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    @error('new_name')
+                        <p class="mt-1 text-xs font-medium text-red-700" role="alert">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <div>
+                    <label for="new_email" class="block text-sm font-medium text-slate-700">Email address</label>
+                    <input id="new_email" type="email" wire:model="new_email" autocomplete="off"
+                           class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    <p class="mt-1 text-xs text-slate-500">Used to sign in and to address notifications.</p>
+                    @error('new_email')
+                        <p class="mt-1 text-xs font-medium text-red-700" role="alert">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <div>
+                    <label for="new_employee_no" class="block text-sm font-medium text-slate-700">
+                        Employee number <span class="font-normal text-slate-400">(optional)</span>
+                    </label>
+                    <input id="new_employee_no" type="text" wire:model="new_employee_no" autocomplete="off"
+                           class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    @error('new_employee_no')
+                        <p class="mt-1 text-xs font-medium text-red-700" role="alert">{{ $message }}</p>
+                    @enderror
+                </div>
+            </div>
+
+            <div class="mt-5 flex gap-2">
+                <button type="button" wire:click="createUser" wire:loading.attr="disabled"
+                        class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+                    <span wire:loading.remove wire:target="createUser">Create the account</span>
+                    <span wire:loading wire:target="createUser">Creating…</span>
+                </button>
+                <button type="button" wire:click="cancelCreating"
+                        class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    @endif
 
     {{-- ---- The edit panel ----------------------------------------------- --}}
     @if ($editing)
