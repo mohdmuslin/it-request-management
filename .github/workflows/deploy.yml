@@ -1,0 +1,269 @@
+name: Deploy to cPanel
+
+# WHY THIS RUNS HERE RATHER THAN BEING UPLOADED BY HAND
+#
+# The target host has no SSH and no cPanel Terminal, so anything the server needs must
+# arrive as finished files. Building on a runner means the artifacts are produced on
+# Linux by a recorded, repeatable process rather than being whatever happened to be on
+# somebody's Windows PC that day — which is how a deploy quietly ships a half-built
+# frontend.
+#
+# It also makes `vendor/` and `public/build` non-issues: both are gitignored, so a plain
+# clone on the server would give source code and a broken application.
+
+on:
+  push:
+    branches: [main]
+  # Lets you redeploy without an empty commit, if a transfer fails halfway.
+  workflow_dispatch:
+
+# Two pushes in quick succession must not race, or they interleave transfers and leave a
+# mixture of both revisions on the server.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    # Only ever deploy the branch that is production.
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------
+      # Wait for CI on this commit.
+      #
+      # Deploying before the tests pass puts a broken commit in front of staff — and this
+      # application's failures are quiet: a total that does not reconcile, a due date
+      # computed against the wrong calendar, an approval that silently does not appear.
+      # None of them raise anything anybody would see. So the deploy refuses to start
+      # until CI is green on this exact commit.
+      # -----------------------------------------------------------------
+      - name: Wait for tests to pass
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          check-name: test
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 20
+          allowed-conclusions: success
+          verbose: true
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          # Only what the APPLICATION needs at runtime. No `gd`, no `sqlite`: neither is
+          # used in production, and including them would let a dependency that needs them
+          # pass here and fail on the host.
+          extensions: mbstring, intl, pdo_mysql, curl, zip, fileinfo
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install PHP dependencies
+        run: composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
+
+      - name: Install and build frontend
+        run: |
+          npm ci
+          npm run build
+
+      # -----------------------------------------------------------------
+      # Sanity checks, before anything is transferred.
+      #
+      # If the build silently produced nothing, the deploy would still "succeed" and the
+      # site would render a blank page — because Blade loads its assets through @vite and
+      # a missing manifest is not a build error. Asserting it here makes the failure cheap
+      # and the message clear, instead of it surfacing as a white screen on the live site.
+      # -----------------------------------------------------------------
+      - name: Verify the artifacts exist
+        run: |
+          if [ ! -f public/build/manifest.json ]; then
+            echo "::error::public/build/manifest.json is missing — the frontend did not build, and the site would render blank."
+            exit 1
+          fi
+
+          if [ ! -f vendor/autoload.php ]; then
+            echo "::error::vendor/autoload.php is missing — the application would fatal on the first request."
+            exit 1
+          fi
+
+          # `public/index.php` is the FRONT CONTROLLER — the one file the web server
+          # actually executes. Without it the site answers 403 (directory listing denied)
+          # and nothing in the response says why. It went missing on the sibling
+          # project's server on a deploy that reported success, so it is asserted here
+          # rather than assumed.
+          if [ ! -f public/index.php ]; then
+            echo "::error::public/index.php is missing — the web server has nothing to execute and the site returns 403."
+            exit 1
+          fi
+
+          echo "Build manifest present; $(find public/build -type f | wc -l) asset(s)."
+          echo "vendor present; $(find vendor -type f | wc -l) file(s)."
+
+      # -----------------------------------------------------------------
+      # Package `vendor/` into ONE archive.
+      #
+      # `vendor/` is a BUILD ARTIFACT, not source — Composer generates it from
+      # `composer.lock` — and it is the overwhelming majority of the files in a deploy.
+      # Shipping it as one archive turns thousands of transfers into a couple of hundred,
+      # which matters on a shared host's FTP.
+      #
+      # IMPORTANT: this does NOT work around a transfer failure. On the sibling project
+      # the archive was introduced believing it fixed an FTPS error, and the next run
+      # disproved that — the failure was on the TLS data socket and had nothing to do with
+      # volume. The archive is kept because it is faster and less likely to be
+      # interrupted, not because it solves anything it did not solve.
+      #
+      # The archive contains the `vendor/` directory itself, so extracting it at the
+      # application root lands the files correctly without creating a folder first.
+      # -----------------------------------------------------------------
+      - name: Package vendor
+        run: |
+          zip -qr vendor.zip vendor -x 'vendor/composer/tmp-*'
+          echo "vendor.zip: $(du -h vendor.zip | cut -f1), $(unzip -l vendor.zip | tail -1 | awk '{print $2}') entries"
+
+      # -----------------------------------------------------------------
+      # Arm the post-deploy hook.
+      #
+      # There is no shell on the host, so the workflow cannot run the post-upload steps
+      # after the transfer. It leaves a FLAG FILE instead, and a cron job picks it up:
+      #
+      #   0 * * * *  cd /home/USER/itrequest.mwstay.com && \
+      #     [ -f DEPLOY ] && rm -f DEPLOY && \
+      #     php artisan itrequest:deploy >> storage/logs/deploy.log 2>&1
+      #
+      # CREATED HERE, BEFORE THE UPLOAD, NOT AFTER — which is the whole point of its
+      # position in this file. A flag created after the transfer would need a second
+      # transfer to deliver it, and that second transfer can fail after the code has
+      # already landed: the release ships and the migrations never run, with nothing to
+      # say so. Created before, it travels in the SAME pass — either both arrive or
+      # neither does.
+      #
+      # It is not inside `storage/`, because that directory is excluded from the transfer
+      # (deliberately, so server state is never overwritten) and a flag placed there would
+      # never be uploaded at all.
+      #
+      # Only when the deploy is ARMED. Creating it on a dry run would make the server run
+      # a deployment for a release that never arrived.
+      # -----------------------------------------------------------------
+      - name: Arm the post-deploy hook
+        if: vars.FTP_DEPLOY_ENABLED == 'true'
+        run: |
+          echo "deploy $(date -u +%Y-%m-%dT%H:%M:%SZ) commit ${GITHUB_SHA}" > DEPLOY
+          echo "Flag created; it travels with this upload and the server's cron job acts on it."
+
+      # -----------------------------------------------------------------
+      # Upload.
+      #
+      # PLAIN FTP, DELIBERATELY — NOT FTPS.
+      #
+      # The host offers explicit FTPS and the control connection works over TLS: it
+      # authenticates and lists the tree. The failure is on the TLS DATA socket, during
+      # the file transfer itself, with `SSL alert number 50`.
+      #
+      # It is not size, speed or duration. On the sibling project an 8,599-file upload
+      # failed after 62 minutes; reduced to ~250 files and one archive it failed in 4
+      # minutes with the identical error. The dry run succeeds because a dry run never
+      # transfers file contents, so a green rehearsal proves nothing about a real upload.
+      #
+      # The cause is the action's bundled `basic-ftp` 5.x against a modern Node TLS
+      # session. No input on this action changes it, and the newest release still depends
+      # on the affected version.
+      #
+      # WHAT THIS COSTS: the FTP password and the transferred bytes cross the network
+      # unencrypted. That is a real loss. It is accepted because the payload is source
+      # code and a Composer archive, and because `.env` is EXCLUDED — so the database
+      # password, the app key and any uploaded documents are never in the transfer at
+      # all. The only credential exposed is one FTP account scoped to this directory.
+      #
+      # Confirm the host still accepts a login without TLS before relying on it: sending
+      # `USER` before `AUTH TLS` should be answered `331 ... Password required`. A host
+      # that required TLS would refuse, and this step would fail immediately at
+      # authentication rather than part-way through a transfer.
+      # -----------------------------------------------------------------
+      - name: Deploy over FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftp
+          port: 21
+          timeout: 300000
+
+          # -----------------------------------------------------------------
+          # STATE FILE.
+          #
+          # This action keeps a state file ON THE SERVER recording what it has already
+          # uploaded, and skips files listed there. On the sibling project a stale record
+          # travelled with a relocated application and `public/index.php` was never
+          # re-uploaded while every file beside it was — producing a 403 with no
+          # explanation. The name is versioned so it can be forced fresh if that ever
+          # happens here.
+          # -----------------------------------------------------------------
+          state-name: .ftp-deploy-sync-state.json
+          local-dir: ./
+          server-dir: ./
+          # ARMED rather than automatic. Until the repository variable FTP_DEPLOY_ENABLED
+          # is exactly `true`, this connects, compares and REPORTS without changing
+          # anything. Settings → Secrets and variables → Actions → Variables.
+          dry-run: ${{ vars.FTP_DEPLOY_ENABLED != 'true' }}
+
+          # -----------------------------------------------------------------
+          # EXCLUDE — the most important part of this file.
+          #
+          # It does two jobs: keeps junk off the server, and protects server state that
+          # exists nowhere else, because anything NOT listed here is DELETED from the
+          # server when it is absent locally. Exclusions are skipped in BOTH DIRECTIONS,
+          # which is why `DEPLOY` is deliberately NOT in this list — excluding it would
+          # stop the post-deploy flag being uploaded at all.
+          #
+          #   .env                database password and APP_KEY. Never in the repository,
+          #                       so without this the deploy deletes it and the site 500s.
+          #
+          #   storage/**          sessions, compiled views, the log, AND the uploaded
+          #                       documents. Excluding the whole tree is deliberate: a
+          #                       tender document attached to a request exists nowhere
+          #                       else and no database backup contains it.
+          #
+          # A NOTE ON THE STORAGE TREE. Excluding these paths means the empty directories
+          # are not uploaded either, so a fresh server has no `storage/framework/views` —
+          # and the application then dies with "View path not found", a message that names
+          # views rather than a missing folder, with an empty log because storage/logs is
+          # missing too. That is handled in CODE, by `itrequest:install` and
+          # `itrequest:deploy`, rather than with `!` negation patterns whose semantics
+          # would have to be trusted.
+          # -----------------------------------------------------------------
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            **/.env
+            **/.env.*
+            **/vendor/**
+            **/tests/**
+            **/scripts/**
+            **/docs/**
+            **/storage/**
+            **/.github/**
+            **/*.md
+            vendor.zip
+            phpunit.xml
+            .editorconfig
+            .gitattributes
+            *.log
+
+      # -----------------------------------------------------------------
+      # Note: the post-deploy flag was created BEFORE the upload, deliberately — see the
+      # comment on that step. It travels in the same transfer, so the code and the
+      # instruction to finish deploying either both arrive or neither does.
+      # -----------------------------------------------------------------

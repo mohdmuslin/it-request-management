@@ -33,6 +33,14 @@ yarn-error.log
 # skip files it believes are already uploaded.
 /.ftp-deploy-sync-state*.json
 
+# The post-deploy flag. Created by the deploy workflow and uploaded with the release;
+# the server's cron job deletes it once it has run `itrequest:deploy`.
+#
+# NOT excluded in the workflow's `exclude:` list, deliberately — that list is skipped in
+# both directions, so excluding it there would stop the flag being uploaded at all, and
+# the deployment steps would never run.
+/DEPLOY
+
 # --- House section -----------------------------------------------------------
 # Throwaway scratch files from development sessions. The two existing projects in
 # this workspace use the same convention, so leftover debug scripts do not end up
