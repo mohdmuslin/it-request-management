@@ -270,17 +270,79 @@ that never happened, and the first real send would then be invisible.
 Four required features depend on delivery: assignment notification, decision notification,
 reminders and escalation.
 
-### Proving it before switching it on
+### 7.1 What you need to supply
 
-1. Set the `MAIL_*` values in `.env`.
-2. Leave `ITREQUEST_MAIL_ENABLED=false`.
-3. Confirm the mailer is not `log`: `itrequest:deploy-check` **fails** if it is, because
-   `MAIL_MAILER=log` looks configured — settings save, nothing errors, and nothing reaches
-   an inbox either.
-4. Send one real message and receive it in a real inbox.
-5. Only then set `ITREQUEST_MAIL_ENABLED=true`.
+Everything comes from **cPanel → Email Accounts → Connect Devices** for the mailbox you
+intend to send as. Nothing needs to be invented.
 
-> **A green `MAIL_MAILER` setting is not proof.** The gate is a message in an inbox.
+| Setting | Where it comes from | Notes |
+|---|---|---|
+| `MAIL_HOST` | cPanel → Connect Devices | Usually `mail.<yourdomain>` |
+| `MAIL_PORT` | cPanel → Connect Devices | **Not always the default.** Some accounts are 587, some 465 |
+| `MAIL_SCHEME` | Matches the port | `tls` for 587, `ssl` for 465. **Mixing them fails** |
+| `MAIL_USERNAME` | The mailbox address | The **full** address, not just the part before the `@` |
+| `MAIL_PASSWORD` | The mailbox password | The **mailbox** password, not the cPanel login |
+| `MAIL_FROM_ADDRESS` | An address your server may send as | A mismatch with the authenticated account is the commonest cause of a message that is accepted and then silently dropped |
+
+> **A separate mailbox is worth creating for this.** Sending as a person's own address means
+> their sent-folder and reputation carry the application's notifications, and a change of
+> staff breaks the mail without anybody connecting the two.
+
+### 7.2 Prove it before switching it on
+
+**Do not enable delivery because the settings look right.** The three ways this fails all
+look identical to a working configuration from the settings screen:
+
+- `MAIL_MAILER=log` is a *real mailer*. It writes to a file, reports success and delivers
+  nothing. It is also the default in `.env.example`, so it is what a copy-paste deployment
+  ends up with.
+- A wrong `MAIL_FROM_ADDRESS` is frequently **accepted** and then dropped by the receiving
+  server as a spoofing attempt.
+- A shared host often refuses outbound SMTP on one port while allowing the other.
+
+So test it, with a real inbox you can open:
+
+```
+* * * * *  cd /home/mwstayco/itrequest.mwstay.com && /usr/local/bin/php artisan itrequest:test-mail you@mwstay.com >> /home/mwstayco/mailtest.log 2>&1
+```
+
+Read `mailtest.log`, **then delete the cron job.**
+
+The command reports what it knows and states plainly what it cannot: that the mail server
+**accepted** the message, which is not the same as delivered. Check the inbox — **including
+the spam folder**, because a missing SPF record sends a legitimate message to spam and the
+sender is the last person to find out.
+
+It refuses outright to test the `log` or `array` mailers rather than reporting a success
+that could never happen.
+
+### 7.3 Switch it on
+
+Only once a message has arrived:
+
+```ini
+ITREQUEST_MAIL_ENABLED=true
+```
+
+Then confirm, and check the queue worker is processing:
+
+```
+php artisan itrequest:deploy-check
+```
+
+`itrequest:deploy-check` **fails** if delivery is enabled while the mailer is `log`, because
+that combination means the application believes it is notifying people and nobody is being
+told anything.
+
+### 7.4 If it does not work
+
+| Symptom | Cause |
+|---|---|
+| `535 authentication failed` | `MAIL_USERNAME` is not the full address, or the password is the cPanel login rather than the mailbox password |
+| `Connection refused` | Wrong port. Try the other one, and change `MAIL_SCHEME` to match |
+| `certificate verify failed` | `MAIL_SCHEME` is `ssl` on the `tls` port, or the reverse |
+| Accepted but never arrives | Check spam. Then check `MAIL_FROM_ADDRESS` matches an address the server may send as |
+| Accepted, no error, no message anywhere | The mailer is `log`. Check `MAIL_MAILER` |
 
 ---
 
