@@ -41,12 +41,27 @@ jobs:
       # computed against the wrong calendar, an approval that silently does not appear.
       # None of them raise anything anybody would see. So the deploy refuses to start
       # until CI is green on this exact commit.
+      #
+      # `check-name` MUST MATCH THE CHECK RUN NAME, WHICH IS THE JOB'S `name:` — NOT ITS
+      # id. This job was written as `check-name: test` while ci.yml declares:
+      #
+      #     jobs:
+      #       test:                            # <- the id
+      #         name: Tests (Laravel + Pest)   # <- the check run name
+      #
+      # The names never matched, so the action polled once, found no check called "test",
+      # and gave up. It failed 22 seconds in, while CI takes about 90 — so the gate was
+      # never actually waiting for anything, and it has blocked every deploy since it was
+      # written while looking like a test failure.
+      #
+      # Renaming the job in ci.yml means renaming it here. The two files are one
+      # agreement, and nothing enforces it.
       # -----------------------------------------------------------------
       - name: Wait for tests to pass
         uses: lewagon/wait-on-check-action@v1.3.4
         with:
           ref: ${{ github.sha }}
-          check-name: test
+          check-name: 'Tests (Laravel + Pest)'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 20
           allowed-conclusions: success
