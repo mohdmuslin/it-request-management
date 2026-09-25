@@ -328,6 +328,54 @@ instant", which is the opposite of "we have not finished anything".
 **Done when:** a request raised through the live system is approved, consolidated and closed, and
 the audit trail is complete.
 
+#### Progress
+
+| Item | Status |
+|---|---|
+| `itrequest:install` — one-shot, refuses to re-run | ✅ Done |
+| `itrequest:deploy` — routine post-upload steps, safe to repeat | ✅ Done |
+| `itrequest:deploy-check` — read-only pre-flight validator | ✅ Done |
+| `itrequest:set-password` — the only password reset without a shell | ✅ Done |
+| `.github/workflows/deploy.yml` — build, verify, upload, arm the hook | ✅ Done |
+| `docs/deployment.md` — runbook | ✅ Done |
+| 288 tests passing, Pint clean | ✅ Done |
+| UAT run-through against the live site | ⬜ **Blocked on the email gate** |
+| Administrator and user guides | ⬜ Next |
+
+**The installer closes a gap that would have made a production install unusable.** `DemoUserSeeder`
+refuses outside `local`/`testing` — deliberately, because it creates accounts with a known password
+and publishing credentials is how the sibling project ended up with live accounts anybody could sign
+into. But that left a fresh production install seeded by `db:seed` with **zero users**, and every
+screen sits behind `auth`. Nobody could sign in, and there was no way out except SQL.
+
+The installer creates the first administrator with a **generated** password rather than a published
+default, and prints it once — written to the log as well, because cron output usually goes to
+`/dev/null` and the printed value is frequently lost.
+
+**Two defects were found while building the commands:**
+
+1. **`warn()` and `error()` write to STDERR**, so a redirected `itrequest:deploy-check` report
+   contained the summary — "14 warning(s)" — and none of the 14. On this host the log file *is* the
+   report, so a checker that loses half its content when redirected defeats its own purpose. Every
+   finding now goes to stdout, with the severity in the mark.
+2. **`config:cache` replaces the config repository mid-process** and forces the container to
+   rebuild. Against an in-memory SQLite database that opens a *new* connection, which is a *new,
+   empty* database — so the command's own verification step reported `no such table:
+   workflow_stages`, a failure it had caused itself. The cache steps now run only in production,
+   where the database is real and persists across connections.
+
+> **The post-deploy flag is created BEFORE the upload, not after.** A flag created afterwards would
+> need a second transfer to deliver it, and that transfer can fail after the code has already
+> landed — shipping the release with the migrations never run and nothing to say so. Created first,
+> it travels in the same pass: either both arrive or neither does.
+
+> **Plain FTP, not FTPS — and the reason is recorded in the workflow rather than left as a puzzle.**
+> The control connection works over TLS; the failure is on the data socket. It is not size or speed:
+> 8,599 files failed in 62 minutes, and 250 files plus one archive failed in 4 minutes with the
+> identical error. `.env` is excluded from the transfer, so the database password, the app key and
+> any uploaded document never cross the wire — the only credential exposed is one FTP account
+> scoped to this directory.
+
 ---
 
 ## 3. Milestones
