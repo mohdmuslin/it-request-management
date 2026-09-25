@@ -12,12 +12,19 @@
  *
  * Run: php scripts/ci-assert-reference-data.php
  * Exits non-zero with a message naming what was wrong.
+ *
+ * WHY EVERY IMPORT IS ABOVE THE BOOTSTRAP
+ *
+ * A `use` statement only applies from the line it appears on, so an import placed
+ * after `$app->make(Kernel::class)` is not in scope for it. `Kernel::class` then
+ * resolves to a class called `Kernel` in the GLOBAL namespace, which does not exist,
+ * and the script dies with "Target class [Kernel] does not exist" — a message that
+ * points at the container rather than at the ordering.
+ *
+ * Pint moves bare class names to the bottom of the import block, so this is a
+ * mistake that can be reintroduced by a formatter run. The imports stay here, above
+ * anything that executes.
  */
-
-require __DIR__.'/../vendor/autoload.php';
-
-$app = require_once __DIR__.'/../bootstrap/app.php';
-$app->make(Kernel::class)->bootstrap();
 
 use App\Enums\UserRole;
 use App\Models\Classification;
@@ -29,6 +36,11 @@ use App\Models\Tier;
 use App\Models\User;
 use App\Models\WorkflowStage;
 use Illuminate\Contracts\Console\Kernel;
+
+require __DIR__.'/../vendor/autoload.php';
+
+$app = require_once __DIR__.'/../bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
 
 $failures = [];
 
