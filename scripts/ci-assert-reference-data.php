@@ -140,6 +140,118 @@ if ($isLocalish && ! $seeded) {
         .($seeded ? ', demo accounts present as expected' : ', demo accounts correctly absent')."\n";
 }
 
+/**
+ * Documentation does not cite a class that was never written.
+ *
+ * WHY THIS IS AN ASSERTION AND NOT A DOCUMENTATION REVIEW
+ *
+ * `architecture.md` listed `app/Contracts/` containing `IdentityProvider`, and §6 showed the
+ * interface as a PHP code block naming `LocalProvider` and `EntraProvider`. **None of them
+ * existed.** The compliance matrix cited that section as evidence, so a requirement was reported
+ * as met on the strength of a design document describing an intention.
+ *
+ * Nothing in a test suite reads a design document, and no reviewer re-reads one against `app/`
+ * on every change. So the check is mechanical: any class name ending in Service, Provider,
+ * Policy, Middleware, Source or Controller that a design document names must exist as a file.
+ *
+ * DELIBERATELY NARROW. It matches capitalised names with those suffixes only, because that is
+ * the shape a citation takes — `WorkflowService`, not "the workflow engine". Wider matching
+ * produces false positives from prose and the check gets switched off, which is worse than not
+ * having it.
+ *
+ * KNOWN PHANTOMS ARE LISTED, AND THE LIST IS BIDIRECTIONAL
+ *
+ * The names below are cited because the documents now say explicitly that they were NOT built —
+ * which is the correction, not a defect. An unconditional check would fail on the corrected
+ * documents and have to be removed, so it fails in both directions instead:
+ *
+ *   - a cited name that is not on the list and does not exist  -> a NEW false claim
+ *   - a name that IS on the list but now exists                -> the documents are stale
+ *
+ * The second direction is what keeps this useful. When someone finally writes `IdentityProvider`,
+ * the check fails and names the docblock that still describes it as missing.
+ */
+echo "\nDesign documents cite only classes that exist\n";
+
+/** Documented as not built. See compliance-matrix.md D-7 to D-10 and architecture.md §4, §6. */
+$knownPhantoms = [
+    'IdentityProvider',      // D-10 — described in architecture.md §6, never written
+    'LocalProvider',         // D-10
+    'EntraProvider',         // D-10 / D-1
+    'HolidaySource',         // planned integration contract, never written
+    'RequestPolicy',         // named in architecture.md §4; the policy is ItRequestPolicy
+    'ApprovalPolicy',        // named in architecture.md §4; not written
+    'RecommendationPolicy',  // named in architecture.md §4; not written
+    'ApprovalService',       // named in architecture.md §4; the work is in WorkflowDecisionService
+    'RecommendationService', // named in architecture.md §4; the work is in GovernanceService
+    'ConsolidationService',  // named in architecture.md §4; the work is in GovernanceService
+    'ReferenceDataService',  // named in architecture.md §4; the work is in the Livewire components
+];
+
+$docNames = glob(__DIR__.'/../docs/*.md') ?: [];
+$cited = [];
+
+foreach ($docNames as $doc) {
+    // The vendor brief and this project's own review notes describe a system that was to be
+    // built, and a matrix that lists what was NOT built. Neither is a claim against app/.
+    if (str_contains(basename($doc), 'Vendor_Brief')) {
+        continue;
+    }
+
+    $text = (string) file_get_contents($doc);
+
+    if (preg_match_all(
+        '/\b([A-Z][A-Za-z]*(?:Service|Provider|Policy|Middleware|Source|Controller))\b/',
+        $text,
+        $matches
+    )) {
+        foreach ($matches[1] as $name) {
+            $cited[$name][] = basename($doc);
+        }
+    }
+}
+
+// Every class name that exists anywhere under app/, by basename.
+$exists = [];
+
+foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__.'/../app')) as $file) {
+    if ($file->isFile() && $file->getExtension() === 'php') {
+        $exists[$file->getBasename('.php')] = true;
+    }
+}
+
+$phantom = [];
+$nowBuilt = [];
+
+foreach ($cited as $name => $docs) {
+    $existsOnDisk = isset($exists[$name]) || class_exists('App\\'.$name);
+    $isKnownPhantom = in_array($name, $knownPhantoms, true);
+
+    if (! $existsOnDisk && ! $isKnownPhantom) {
+        $phantom[$name] = array_unique($docs);
+    }
+
+    // The other direction: documented as missing, but now present. The documents are
+    // stale and somebody should delete the "not built" note rather than leave it there
+    // contradicting the code.
+    if ($existsOnDisk && $isKnownPhantom) {
+        $nowBuilt[$name] = array_unique($docs);
+    }
+}
+
+foreach ($phantom as $name => $docs) {
+    $failures[] = "docs cite '{$name}', which does not exist in app/ (".implode(', ', $docs).')';
+}
+
+foreach ($nowBuilt as $name => $docs) {
+    $failures[] = "'{$name}' exists now but ".implode(', ', $docs).' still says it was not built — remove the stale note';
+}
+
+if ($failures === []) {
+    echo '  ok  no new phantom citations ('.count($knownPhantoms).' known and documented; '
+        .count($cited)." names checked)\n";
+}
+
 if ($failures !== []) {
     fwrite(STDERR, "\nReference data assertions FAILED:\n");
     foreach ($failures as $failure) {

@@ -343,45 +343,63 @@ the audit trail is complete.
 | `docs/user-guide.md` | ✅ Done |
 | `docs/compliance-matrix.md` — final status per requirement | ✅ Done |
 | `itrequest:uat` — the 15 acceptance scenarios, executable | ✅ Done |
-| 310 tests passing, Pint clean | ✅ Done |
+| 326 tests passing, Pint clean | ✅ Done |
 | UAT run-through against the live site | ⬜ Blocked on the email gate |
-| **Document upload (FR-006)** | ⬜ **Not built** — see below |
-| **Recommendations and Audit log screens** | ⬜ **Placeholders** — see below |
+| **Document upload (FR-006)** | ⬜ **Not built** — D-7 |
+| **Recommendations and Audit log screens** | ⬜ **Placeholders** — D-8 |
+| **Autosave and editable templates** | ⬜ **Not built** — D-9 |
+| **Identity provider interface (FR-001)** | ⬜ **Not built — documented as if it were** — D-10 |
 
 #### What the matrix review found
 
-Writing the compliance matrix's final status meant reading every requirement against what
-actually exists, and three things it had been reporting as met were not.
+Reviewing `compliance-matrix.md` against the source — every row checked against the code rather
+than against the design documents — found **four requirements reported as met that were not**.
 
-**1. Documents were never built (FR-006).** The `attachments` table, the `Attachment` model,
-the MIME allow-list, the size cap and the private storage directory all exist — and there is
-no upload action and no download action anywhere in the application. The request detail screen
-eager-loads `attachments` and the view never renders them. The wizard's document step, listed
-in `interface.md` §4 as step 5 of 5, is not one of the four steps that exist.
+**1. The identity provider interface was never written (D-10).** This is the most serious, and it
+is different in kind from the others. `architecture.md` §4 lists `app/Contracts/` containing
+`IdentityProvider`; §6 shows the interface as a PHP code block and a driver table naming
+`LocalProvider` and `EntraProvider`. **None exists** — not as an interface, a stub, or a comment.
+`Auth\Login` calls `Auth::attempt()` directly, and the `identity` config array is read by nothing.
+
+So FR-001 was reported as *Entra deferred, seam built*. More precisely: **neither was built.** The
+cost is not the code — the estimate already covers it — it is that the design document describes
+the architecture in the present tense, and someone implementing SSO would search for
+`LocalProvider`, find nothing, and reasonably conclude the repository was incomplete.
+
+**2. Documents were never built (D-7).** The `attachments` table, the `Attachment` model, the MIME
+allow-list, the size cap and the private storage directory all exist — and there is no upload
+action and no download action anywhere. The request detail screen eager-loads `attachments` and
+the view never renders them. The wizard's document step, listed in `interface.md` §4 as step 5 of
+5, is not one of the four steps that exist.
 
 The consequence is worse than a missing feature. `GovernanceService::closureBlockers()` returns
-a blocker reading *"All mandatory decisions and documentation are recorded"* and checks only
-the decisions — so **BR-006's documentation half is unenforced** and a request closes with no
+a blocker reading *"All mandatory decisions and documentation are recorded"* and checks only the
+decisions — so **BR-006's documentation half is unenforced** and a request closes with no
 supporting evidence at all. The check is honest about its intent and does not implement it,
 which is the failure mode that survives review: the code says the right thing.
 
-**2. Two role landing pages are placeholders.** `UserRole::landingRoute()` sends an Auditor to
-`admin.audit.index` and a Technical Reviewer to `recommendations.index`. Both render a panel
-saying the screen arrives in a later phase. **So an Auditor signs in and is told the screen
-does not exist yet** — while the audit trail it would show is complete and append-only.
+**3. Two role landing pages are placeholders (D-8).** `UserRole::landingRoute()` sends an Auditor
+to `admin.audit.index` and a Technical Reviewer to `recommendations.index`. Both render a panel
+saying the screen arrives in a later phase. **So an Auditor signs in and is told the screen does
+not exist yet** — while the audit trail it would show is complete and append-only.
 
-**3. Autosave and editable templates were never built.** `interface.md` §4 specifies autosave
+**4. Autosave and editable templates were never built (D-9).** `interface.md` §4 specifies autosave
 every 30 seconds; there is only the explicit **Save draft** button. FR-013 covers templates as
 well as reference data; templates are fixed strings.
 
-Each is now declared in `compliance-matrix.md` as D-7, D-8 and D-9 — **incomplete
-requirements, not deferrals**, because a deferral is a decision and these were oversights.
+**Three further rows overstated their mechanism** without being absent features. FR-015 claimed
+"filters on all listed fields" and has no unit filter. BR-003 claimed conditional logic "driven by
+tier and classification", and the real conditions are on business-plan status and urgency —
+neither is a tier or a classification. BR-009 claimed system-managed fields are "not
+mass-assignable", and `status`, `current_stage`, `tier_id` and `classification_id` all are —
+protected by every form mapping fields explicitly, so the rule holds by discipline rather than by
+the model refusing.
 
-> **Why this is recorded rather than quietly fixed.** The three gaps are small and could have
-> been closed without anyone noticing they had been open. A status table that reported them as
-> done is what a handover would have carried forward, and the next person to read it would have
-> assumed the documents were somewhere. The value of the matrix is that it can be wrong out
-> loud.
+**The method was the problem.** `architecture.md` and `interface.md` describe the intended system
+accurately and in the present tense. A status document that cites them as evidence inherits their
+optimism, and nothing in a test suite reads a design document. **A compliance row may now cite
+only a file that exists** — and `architecture.md` §4 and §6 carry a note saying the tree is the
+intended layout rather than a directory listing.
 
 **The installer closes a gap that would have made a production install unusable.** `DemoUserSeeder`
 refuses outside `local`/`testing` — deliberately, because it creates accounts with a known password

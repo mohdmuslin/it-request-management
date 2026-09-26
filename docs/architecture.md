@@ -97,7 +97,7 @@ that.
 app/
   Actions/            single-purpose write operations
   Console/Commands/   InstallApplication, SendDueReminders, RecomputeDueDates
-  Contracts/          IdentityProvider, HolidaySource
+  Contracts/          (NOT BUILT) IdentityProvider, HolidaySource
   Enums/              RequestStatus, WorkflowStage, Tier, Classification, GovernanceRoute, Decision
   Http/
     Controllers/      thin; most screens are Livewire components
@@ -111,6 +111,19 @@ app/
                       NotificationService, ReferenceDataService
   Support/            ApiResponse (for any future API)
 ```
+
+> **This tree is the intended layout, not a directory listing.** Verified against the
+> repository: `Actions/`, `Contracts/`, `Http/Middleware/` and `Support/` **do not exist** — the
+> middleware and the API support class were planned and never written, and `Contracts/` is the
+> subject of `compliance-matrix.md` D-10. Four of the eight services named above do not exist
+> either (`ApprovalService`, `RecommendationService`, `ConsolidationService`,
+> `ReferenceDataService`); the governance work went into one `GovernanceService` instead, and
+> `ReportingService`, `RequestNumberService` and `WorkflowDecisionService` were added later.
+>
+> **`app/` in the repository is the authority, not this tree.** This section was corrected after
+> a compliance review found it being cited as evidence that an identity interface existed. A
+> design document describes what should be built; reading one as a description of what *was*
+> built is exactly how that happened.
 
 ---
 
@@ -185,7 +198,14 @@ re-send. Without that, an hourly reminder job becomes an hourly spam job.
 The brief requires Entra ID via OIDC/OAuth 2.0. The organisation demonstrably has it — the
 existing SharePoint forms read department and division directly from Microsoft profiles.
 
-The POC uses **local login**, behind an interface:
+> **As built, the POC uses local login and nothing else.** `Auth\Login` calls `Auth::attempt()`
+> against `users.email` and `users.password`. **The interface below was never written** — it
+> describes the intended design. This section previously stated "the POC uses local login,
+> **behind an interface**", which was not true and is the single error a compliance review found
+> hardest to catch, because it read as an architectural fact in the document a new developer
+> opens first. See `compliance-matrix.md` D-10.
+
+The intended shape — **to be built**, not a description of the code:
 
 ```php
 interface IdentityProvider
@@ -197,8 +217,8 @@ interface IdentityProvider
 
 | Driver | Status |
 |---|---|
-| `LocalProvider` | POC. Email + password |
-| `EntraProvider` | Production. OIDC redirect, then the same profile mapping |
+| `LocalProvider` | **Not built.** The POC logs in through `Auth::attempt()` in `Auth\Login` |
+| `EntraProvider` | **Not built.** Deferred — see `compliance-matrix.md` D-1 and D-10 |
 
 > **`users.entra_object_id` is in the first migration.** Adding it after users exist means
 > matching rows to Entra identities by email — which fails for anyone whose email has changed,
@@ -319,9 +339,9 @@ silently is worse than one that fails loudly, because nobody investigates a sile
 
 | Change | Cost |
 |---|---|
-| Entra ID SSO | Implement `EntraProvider`; swap the config binding. No schema change |
+| Entra ID SSO | **Write the interface first** (D-10), then implement `EntraProvider` and swap the config binding. No schema change |
 | Redis | Add the service; change the queue driver. No code change |
-| The organisation's holiday API | Implement `HolidaySource`. The holidays table is unchanged |
+| The organisation's holiday API | Implement `HolidaySource` — **not built**, see the note on the directory tree above. The holidays table is unchanged |
 | Move to Nginx | Standard Laravel config; keep paths in `.env` |
 | Historical data import | The SharePoint GUIDs and StaticNames in `IT_Request_Schema.csv` give the migration mapping |
 | Delivery / project tracking | A new module beyond `Closed`; the source material does not yet define it |

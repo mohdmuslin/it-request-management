@@ -3,10 +3,42 @@
 Requirement-by-requirement traceability against the vendor brief, plus the **declared deviations**
 the brief requires (§11.1).
 
-**Status key:** ✅ Comply · 🟡 Partial · ⚪ Deferred (POC) · ⛔ Not applicable
+**Status key:**
+
+| Mark | Meaning |
+|---|---|
+| ✅ | **Comply.** Implemented and demonstrated |
+| 🟡 | **Partial.** Part of the requirement is met, and the missing part is named |
+| 🔵 | **Unproven.** Implemented, but there is no evidence it works — the claim is an assertion |
+| ⚪ | **Deferred.** Out of POC scope by decision, with a reason and a production plan |
+| ⛔ | **Not built.** A stated requirement that is absent |
 
 The brief is a sourcing document, so a deviation is not a failure — it is a statement that must
 be made and justified. Every ⚪ below has a reason and a production plan.
+
+> **🔵 and ⛔ are different from ⚪, and the difference matters.** A deferral is a decision. 🔵 and
+> ⛔ are things that were not done — and every one of them was found by reading this table against
+> the source, not by reading the table. `D-7` to `D-10` record them.
+
+> **Every row below was verified against the code, not against the design documents.** That is a
+> correction in method as well as in content: seven rows previously cited classes, columns and
+> checks that exist only as prose in `architecture.md` and `interface.md`. A design document
+> describes what should be built, and reading one as though it described what *was* built is how
+> this table came to be wrong.
+
+### At a glance
+
+| Group | ✅ | 🟡 | 🔵 | ⚪ | ⛔ | Total |
+|---|---|---|---|---|---|---|
+| Functional (FR-001…015) | 9 | 5 | — | — | 1 | **15** |
+| Non-functional (NFR-001…010) | 4 | 3 | 1 | 2 | — | **10** |
+| Business rules (BR-001…010) | 7 | 3 | — | — | — | **10** |
+| Acceptance (UAT-001…015) | 12 | 2 | — | 1 | — | **15** |
+| **Total** | **32** | **13** | **1** | **3** | **1** | **50** |
+
+**Read the 🟡 count as the headline.** Thirteen of fifty rows are partial, and every one of them
+names what is missing rather than saying "mostly done" — because the useful question at handover
+is not *how many requirements are green* but *which specific things still have to happen*.
 
 ---
 
@@ -14,8 +46,8 @@ be made and justified. Every ⚪ below has a reason and a production plan.
 
 | ID | Requirement | Status | Where / note |
 |---|---|---|---|
-| FR-001 | Sign in using approved enterprise identity and SSO | 🟡 | `IdentityProvider` contract with `LocalProvider` (POC) and `EntraProvider` (production). **Entra deferred**, seam built. `architecture.md` §6 |
-| FR-002 | Retrieve or maintain requestor department, division and reporting data | ✅ | Auto-filled from the identity provider; snapshotted on the request. `design.md` §3.1 |
+| FR-001 | Sign in using approved enterprise identity and SSO | 🟡 | Local email + password only. **No `IdentityProvider` interface exists** — the config array and the `entra_object_id` column do, and nothing reads either. See D-10 |
+| FR-002 | Retrieve or maintain requestor department, division and reporting data | 🟡 | Department and division default from the signed-in user's own record and are editable. **Not from an identity provider** — there is no profile retrieval. Names are resolved live, so renaming a department changes how historical requests read |
 | FR-003 | Save incomplete requests as drafts | ✅ | `Draft` state and an explicit **Save draft** at every step. **Autosave is not implemented** — see D-9. `interface.md` §4 |
 | FR-004 | Validate mandatory and conditional fields before submission | ✅ | FormRequest + Livewire rules; the business-plan conditional block. `interface.md` §4 |
 | FR-005 | Unique configurable request number | ✅ | Generated on submit, immutable. `database-design.md` §5 |
@@ -28,7 +60,7 @@ be made and justified. Every ⚪ below has a reason and a production plan.
 | FR-012 | Filters, dashboards and exports | ✅ | Reports module |
 | FR-013 | Administrators manage reference data and templates | 🟡 | Reference data, calendar and users are built. **Notification templates are fixed in code, not editable** — see D-9 |
 | FR-014 | Temporary delegation preserving original and acting approvers | ✅ | `approval_tasks.delegated_from_id`. `design.md` §2.2 |
-| FR-015 | Search by number, title, status, owner, unit, tier, date | 🟡 | Filters on all listed fields. **Full-text search deferred**; `LIKE` at POC volumes |
+| FR-015 | Search by number, title, status, owner, unit, tier, date | 🟡 | Number and title searched together; status, owner, tier, classification, route, department and date are filters. **No unit filter exists.** Full-text search deferred; `LIKE` at POC volumes |
 
 ---
 
@@ -39,7 +71,7 @@ be made and justified. Every ⚪ below has a reason and a production plan.
 | NFR-001 | Least privilege, secure coding, encryption, secrets, vulnerability remediation | 🟡 | Policies, validation, private storage, `.env` secrets. **`vendor/` is not patchable on this host without a manual re-extract** — documented |
 | NFR-002 | Measurable response-time and throughput targets | ⚪ | Deferred. Needs validated usage volumes, which are an open discovery question |
 | NFR-003 | Availability, maintenance and restoration commitments | ⚪ | Deferred. A host-level commitment, not an application feature |
-| NFR-004 | Scale users, requests, documents and workflow volume without redesign | ✅ | Single-table indexed queries; no design element assumes POC volumes |
+| NFR-004 | Scale users, requests, documents and workflow volume without redesign | 🔵 | Indexed single-table queries and no design element assumes POC volumes — but **no load test, no measured throughput, and no stated target**. The claim is a design property, not a demonstrated one |
 | NFR-005 | Keyboard use, readable contrast, labels, validation feedback | ✅ | `interface.md` §8 |
 | NFR-006 | Critical records immutable to ordinary users; retention per policy | ✅ | No update or delete path on `audit_logs` or `workflow_histories`. Retention policy deferred |
 | NFR-007 | Documented standards, automated tests, modular code, controlled configuration | ✅ | Pest feature tests, Pint, services layer, config-driven behaviour |
@@ -54,14 +86,14 @@ be made and justified. Every ⚪ below has a reason and a production plan.
 | ID | Rule | Status | Enforced by |
 |---|---|---|---|
 | BR-001 | Submitted requests not deletable by ordinary users | ✅ | Policy; `Withdrawn` is a status, not a deletion |
-| BR-002 | A rejection or return requires comments | ✅ | FormRequest **and** a database check |
-| BR-003 | Conditional documents and fields driven by tier and classification | ✅ | Business-plan conditional block; `classification_review_units` |
+| BR-002 | A rejection or return requires comments | ✅ | Enforced in `WorkflowDecisionService::assertDecisionIsAllowed()`, **not at the database** — `approval_tasks.comments` is nullable. The service is the only way a decision is recorded, so the rule holds, but a direct insert would not be refused |
+| BR-003 | Conditional documents and fields driven by tier and classification | 🟡 | A conditional block exists, but it is driven by **business-plan status** and **urgency** — neither is a tier or a classification. `classification_review_units` decides *who reviews*, which is routing, not field conditionalism. **No field is conditional on tier or classification** |
 | BR-004 | The approver cannot modify the requestor's justification | ✅ | The approval action writes `approval_tasks` only |
 | BR-005 | Recommendations versioned or preserved, never overwritten | ✅ | `version_no` inserts a new row |
 | BR-006 | Closure requires all mandatory decisions and documentation | 🟡 | **Decisions enforced; documentation not.** See D-7 |
 | BR-007 | A returned request resumes at the configured stage | ✅ | Returning stage recorded on the transition |
 | BR-008 | Delegated decisions capture delegated-from and acting users | ✅ | `delegated_from_id` separate from `approver_id` |
-| BR-009 | System-managed fields not editable through ordinary screens | ✅ | Not mass-assignable; not rendered; changes audited |
+| BR-009 | System-managed fields not editable through ordinary screens | 🟡 | `status`, `current_stage`, `tier_id`, `classification_id` and `governance_route_id` **are mass-assignable**. Protected because every form maps fields explicitly and the wizard documents why — so it holds by discipline rather than by the model refusing. A future `fill($request->all())` would open it silently |
 | BR-010 | Timestamps stored consistently, displayed in the configured timezone | ✅ | UTC storage, `Asia/Kuala_Lumpur` display |
 
 ---
@@ -91,24 +123,42 @@ be made and justified. Every ⚪ below has a reason and a production plan.
 ## Declared Deviations
 
 The brief permits alternatives with justification and requires material deviations to be stated
-(§2.1, §11.1). Six are declared as deviations, and three more — D-7, D-8 and D-9 — as
+(§2.1, §11.1). Six are declared as deviations, and four more — D-7 to D-10 — as
 **incomplete requirements**, recorded because a matrix that reports a missing requirement as
 satisfied is worse than one that reports nothing.
 
-**D-7 to D-9 are not deferrals.** A deferral is a decision that something is out of scope for
-the POC. These are requirements claimed as met that are not, or additions in the interface
-specification presented as though they were built. They are listed so the gap is visible and
-can be scheduled rather than discovered.
+**D-7 to D-10 are not deferrals.** A deferral is a decision that something is out of scope for
+the POC, made deliberately and stated. These four are requirements that this matrix reported as
+met and were not. Three are absent features; **D-10 is worse — a described architecture that was
+never written.** They are listed so the gap is visible and can be scheduled rather than
+discovered.
+
+> **All four were found by reading this table against the source.** Not by reading the table, and
+> not by reading the design documents — which is what produced the error. `architecture.md` and
+> `interface.md` describe the intended system accurately and in the present tense, and a status
+> document that cites them as evidence inherits their optimism. The rule this establishes: **a
+> compliance row may only cite a file that exists.**
+
+| ID | What | Severity |
+|---|---|---|
+| **D-10** | The identity provider interface was never written — **and is documented as if it were** | **Highest** |
+| D-7 | Document upload not built; closure does not check for documentation | High |
+| D-8 | Two role landing pages are placeholders | Medium |
+| D-9 | Autosave and editable templates not built | Low |
+
+D-10 is listed first because it is the only one where the documentation asserts something false
+rather than omitting something true. An absence is found by looking; a false description is found
+only by checking.
 
 ### D-1 — Entra ID SSO deferred
 
 | | |
 |---|---|
 | **Brief prefers** | Microsoft Entra ID via OIDC/OAuth 2.0 |
-| **POC delivers** | Local email + password behind an `IdentityProvider` contract |
+| **POC delivers** | Local email + password — **with no provider abstraction at all**. See D-10 |
 | **Justification** | The POC's purpose is to demonstrate the workflow to management. An app registration, tenant admin consent and token refresh are provisioning steps outside the build, and none of them demonstrates a business process |
-| **Mitigation** | The interface exists; `users.entra_object_id` is in the first migration; the profile-mapping shape matches what the organisation already does in Power Apps |
-| **Production plan** | Implement `EntraProvider`; swap the config binding. No schema change, no data migration |
+| **Mitigation** | `users.entra_object_id` is in the first migration, so no data migration is needed later. **The interface described below was not built — see D-10** |
+| **Production plan** | Build the `IdentityProvider` interface and its local binding (D-10), then `EntraProvider`. No schema change, no data migration |
 
 ### D-2 — Database queue instead of Redis
 
@@ -125,10 +175,10 @@ can be scheduled rather than discovered.
 | | |
 |---|---|
 | **Brief prefers** | File type, size and malware controls for uploads |
-| **POC delivers** | MIME type and size validation; private storage outside the webroot; access controlled and audited |
-| **Justification** | No scanning service is available on this host, and none can be installed without shell access |
-| **Mitigation** | Files are never publicly addressable and never executed. Access requires authorisation per request |
-| **Production plan** | Integrate an AV scanning service at upload; quarantine until cleared |
+| **Status** | **Moot while D-7 stands.** There is no upload, so there is nothing to scan, validate or quarantine. The controls below are configured but exercised by nothing |
+| **Configured, ready for D-7** | A narrow MIME allow-list and a 20 MB cap in `config/itrequest.attachments`, and a private storage path outside the document root created by both the installer and the deploy |
+| **Justification for the deviation itself** | No scanning service is available on this host, and none can be installed without shell access. When the upload is built, this deviation becomes real rather than moot |
+| **Production plan** | Integrate an AV scanning service at upload; quarantine until cleared. **Do this at the same time as D-7, not after** — an upload that accepts arbitrary files with no scanning is a worse position than no upload at all, and the gap between the two is exactly when nobody is looking |
 
 ### D-4 — Committee decision recorded, not voted
 
@@ -193,6 +243,27 @@ can be scheduled rather than discovered.
 | **Justification** | The brief's FR-003 requires drafts, not autosave; autosave is an addition in `interface.md` §4. Editable templates cost a screen, a table and a templating engine for four messages whose wording has not yet been agreed with the business — writing them before the wording exists would be premature |
 | **Consequence** | A requestor who closes the tab without pressing **Save draft** loses what they typed. Nothing else depends on either gap |
 | **Production plan** | Autosave is a small addition to a component that already has the save path. Templates need the final wording first, which is a business input |
+
+### D-10 — The identity provider interface was never written
+
+This is the most serious entry here, because unlike the others it is **documented as existing in
+four places** and none of them is code.
+
+| | |
+|---|---|
+| **Brief requires** | FR-001 — sign in using approved enterprise identity and SSO |
+| **The documentation claims** | `architecture.md` §4 lists `app/Contracts/` containing `IdentityProvider`. §6 shows the interface as a PHP code block and a driver table naming `LocalProvider` for the POC and `EntraProvider` for production. D-1 of this matrix, and `docs/architecture.md` §6 again, both list the production plan as *"implement `EntraProvider`; swap the config binding"* |
+| **What actually exists** | **No `app/Contracts/` directory. No `IdentityProvider`, `LocalProvider` or `EntraProvider` — not as an interface, a stub, or a comment.** `Auth\Login` calls `Auth::attempt(['email' => …, 'password' => …])` directly |
+| **The only real artefact** | An `identity` array in `config/itrequest.php` with a `driver` key and four `entra.*` keys. **Nothing reads any of it.** `ITREQUEST_IDENTITY_DRIVER` appears in no PHP file in the application |
+| **Why this is worse than the other gaps** | D-7 to D-9 are absences. This is a **false description of the architecture**, written in the present tense, in the document a new developer reads first. Someone implementing Entra would search for `LocalProvider`, find nothing, and reasonably conclude the repository was incomplete — or would wire OIDC into `Login.php` and leave the config array still unread |
+| **Consequence for the brief** | D-1 says Entra is *deferred*. More precisely: **neither the SSO nor the seam for it was built.** The POC authenticates locally and that is the whole of it |
+| **What is genuinely reusable** | `users.entra_object_id` (char 36, nullable, unique) is in the first migration. That part of D-1's mitigation is true |
+| **Production plan** | Write the interface, `LocalProvider` binding the existing `Auth::attempt` call, and the config binding to select between drivers. Then `EntraProvider`. The estimate in `project-plan.md` §7 *includes* this work, so no estimate changes — the plan was always to build it, and the documentation simply described it as already built |
+
+> **The correction matters more than the code.** The code is a small, well-understood addition
+> that the work estimate already covers. The documentation was asserting an architecture that
+> does not exist, and that is the kind of error that survives every test suite because no test
+> reads a design document.
 
 ---
 
