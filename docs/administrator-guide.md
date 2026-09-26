@@ -192,12 +192,14 @@ This is the vocabulary the whole workflow is built from. There are four kinds:
 
 | Kind | Used for |
 |---|---|
-| **Tier** | How large the investment is. Drives due-date targets |
+| **Tier** | How large the investment is. **Decided by the budget band**, and drives due-date targets |
 | **Classification** | What kind of change it is — new capability, enhancement, replacement, compliance |
 | **Governance route** | How much scrutiny. Light, Moderate or Full |
 | **Review unit** | Who must file a recommendation — IT Operations, IT Platforms, IT Delivery & Governance |
 
-Each option has a **name**, a **code** and a description.
+Each option has a **name**, a **code** and a description. Tiers additionally carry a **budget band**
+and a **decider** — see §4.1.
+
 
 ### The code matters
 
@@ -223,6 +225,51 @@ has already filled in.
 > combinations of tier, classification and decision type require the committee. Changing it
 > changes routing immediately, with no release and no deployment. That should feel like a
 > significant action, because it is.
+
+### 4.1 Budget bands — what decides a tier
+
+Each tier carries two bounds and a **Chosen by** setting:
+
+| Tier | From | Up to | Chosen by | Meaning |
+|---|---|---|---|---|
+| **Tier 1** | 0.00 | 50,000.00 | Requestor | RM50,000 and below |
+| **Tier 2** | 50,000.01 | *(no limit)* | Requestor | RM50,001 and above |
+| **Tier P** | *(none)* | *(none)* | IT Governance | A partnership — not decided by cost |
+
+**Both bounds are inclusive**, so **RM50,000.00 is Tier 1 and RM50,000.01 is Tier 2**. That is why
+the second band starts at 50,000**.01** and not at 50,000: two bands that both contain 50,000 would
+give that amount two answers, and "which tier is this?" having two answers is worse than either
+answer being wrong.
+
+The screen **refuses to save an overlapping band.** The message names the amount that would be in
+both and the tier it collides with.
+
+> **Moving a boundary takes two saves, and the order is not a preference.**
+>
+> Save the **higher tier first** — narrow it so its floor moves above the new boundary — then widen
+> the lower tier up to it. The reverse order has a moment where both bands contain the new
+> boundary, and there is no single save that avoids it, so the first one is refused. The refusal
+> says so.
+>
+> That is a real constraint rather than a quirk to work around: allowing the overlap would put an
+> invalid configuration live, and the first symptom would be a message on somebody else's request
+> form.
+
+**"Chosen by" is per tier, not one global setting**, because the two coexist. Tier 1 and Tier 2 are
+arithmetic — the requestor picks one and the application refuses a choice that contradicts the
+amount. Tier P is a judgement, so `IT Governance` keeps it out of the requestor's dropdown entirely
+and governance sets it during completeness review.
+
+A tier with **no bounds at all** is not decided by budget. Its amount fields are left empty, which
+means "no limit" — never zero. Recording a ceiling as 0 would describe a band covering nothing.
+
+> **Clearing a bound means "no limit", not "zero".** Empty is how you express an open-ended top
+> tier like Tier 2.
+
+**The requestor cannot pick a tier that contradicts the amount.** Choosing Tier 1 and entering
+RM80,000 is refused, with the message shown beside the **amount** — not beside the tier. The tier is
+chosen on step 1 and the amount entered on step 3, so a message against the invisible field would
+leave the requestor refused with nothing on screen explaining why.
 
 ---
 
@@ -316,9 +363,13 @@ it is easy to disagree with:
 
 | Tier | What it demands |
 |---|---|
-| **Tier 1** | Nothing extra. A small, well-understood request should not need a cost code to be filed — demanding one produces a zero rather than an honest blank |
+| **Tier 1** | **Budget amount.** Nothing else — a small, well-understood request should not need a cost *code* to be filed |
 | **Tier 2** | Budget amount, budget source and resources required. A request of this size is approved against a cost |
 | **Tier P (Partnership)** | Budget amount and budget code required; **dependencies and constraints hidden**, because a partnership with another organisation is governed by the agreement rather than by an internal dependency list |
+
+**Tier 1 requires the amount even though it asks for nothing else**, and that follows from the
+budget bands rather than being a preference: the amount is what *decides* which tier a request is,
+so a request with no amount has no valid tier and could never be submitted. See §7.
 
 **Change these to match how the organisation actually works.** They are the system's opinion about
 governance, and an administrator's is better.

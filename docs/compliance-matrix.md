@@ -54,7 +54,7 @@ is not *how many requirements are green* but *which specific things still have t
 | FR-006 | Upload, categorise, preview and download authorised documents | ⛔ | **Not built.** See D-7 |
 | FR-007 | Support approve, reject and return-for-amendment | ✅ | The transition table. `design.md` §1.3 |
 | FR-008 | Multiple units submit independent recommendations without overwriting | ✅ | `recommendations` with `version_no`. `database-design.md` §5 |
-| FR-009 | Route by tier, classification, decision and governance route | ✅ | Route set at consolidation; `requires_committee` drives Full only |
+| FR-009 | Route by tier, classification, decision and governance route | ✅ | **Tier is now derived from the budget band** — a requestor cannot pick a tier that contradicts the amount, which is a routing rule rather than a preference. Route set at consolidation; `requires_committee` drives Full only |
 | FR-010 | Notify users of assignments, decisions, reminders and escalations | 🟡 | Designed and built, **but email is unproven on this host**. `architecture.md` §9 |
 | FR-011 | Every material action recorded with actor and timestamp | ✅ | `workflow_histories` + `audit_logs`, in-transaction |
 | FR-012 | Filters, dashboards and exports | ✅ | Reports module |
@@ -87,7 +87,7 @@ is not *how many requirements are green* but *which specific things still have t
 |---|---|---|---|
 | BR-001 | Submitted requests not deletable by ordinary users | ✅ | Policy; `Withdrawn` is a status, not a deletion |
 | BR-002 | A rejection or return requires comments | ✅ | Enforced in `WorkflowDecisionService::assertDecisionIsAllowed()`, **not at the database** — `approval_tasks.comments` is nullable. The service is the only way a decision is recorded, so the rule holds, but a direct insert would not be refused |
-| BR-003 | Conditional documents and fields driven by tier and classification | 🟡 | **Fields: done.** A tier makes any governed field required, optional or hidden, and the rule is data an administrator edits (`tier_field_rules`, the **Tier field rules** screen) rather than code. Conditions routed by business-plan status and urgency remain. **Documents are not built — D-7**, and classification drives who reviews rather than which fields apply |
+| BR-003 | Conditional documents and fields driven by tier and classification | 🟡 | **Fields: done.** Two mechanisms: a tier makes any governed field required, optional or hidden (`tier_field_rules`, the **Tier field rules** screen), and **the tier itself is decided by the budget band** (`tiers.budget_min/budget_max`, editable on **Reference data**) with a contradicting pair refused. Conditions routed by business-plan status and urgency remain. **Documents are not built — D-7**, and classification drives who reviews rather than which fields apply |
 | BR-004 | The approver cannot modify the requestor's justification | ✅ | The approval action writes `approval_tasks` only |
 | BR-005 | Recommendations versioned or preserved, never overwritten | ✅ | `version_no` inserts a new row |
 | BR-006 | Closure requires all mandatory decisions and documentation | 🟡 | **Decisions enforced; documentation not.** See D-7 |

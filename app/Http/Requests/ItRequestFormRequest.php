@@ -3,7 +3,9 @@
 namespace App\Http\Requests;
 
 use App\Enums\BusinessPlanStatus;
+use App\Models\Tier;
 use App\Models\TierFieldRule;
+use App\Services\TierBands;
 use App\Services\TierFieldRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -98,20 +100,131 @@ class ItRequestFormRequest extends FormRequest
      */
     public function rules(): array
     {
-        /*
-         * Two statements rather than one, because PHP forbids a positional argument after a
-         * spread — `array_merge(...$steps, $tierRules)` is a parse error.
-         *
-         * `steps()` already folds the tier rules into the step they belong to, so this exists to
-         * cover a field whose step could not be determined. `TierFieldRules::stepFor()` returns a
-         * step for every governed field, so in practice the second merge adds nothing; it is
-         * here so that a future field added to the governed list without a step is still
-         * VALIDATED rather than silently ignored. A rule that governs nothing is the failure
-         * this whole feature exists to avoid.
-         */
         $all = array_merge(...array_values($this->steps()));
 
-        return array_merge($all, $this->tierRules());
+        return $this->appendBandRule(array_merge($all, $this->tierRules()));
+    }
+
+    /**
+     * Add the band check to whatever rule `budget_amount` already has.
+     *
+     * WHY THIS IS NOT A SECOND `array_merge` ARGUMENT
+     *
+     * `array_merge` OVERWRITES on a duplicate string key. Passing the band rules as another
+     * argument silently replaced the tier's own rule for `budget_amount` — so a tier marking the
+     * amount `required` lost that rule the moment a band check was attached, and a request could
+     * be submitted with no amount at all. The rule list looked correct in isolation, which is why
+     * the symptom appeared as a missing error rather than as anything pointing here.
+     *
+     * Appending to the existing list is what "add a check for this field" actually means.
+     *
+     * @param  array<string, mixed>  $rules
+     * @return array<string, mixed>
+     */
+    private function appendBandRule(array $rules): array
+    {
+        $existing = $rules['budget_amount'] ?? [];
+
+        // `budget_amount` may carry a `required` that arrived from `tierRules()` as a list, or a
+        // plain list from `stepThree()`. Both are flattened before the closure is appended, so
+        // the order stays "presence first, then agreement" and the messages read in that order.
+        $rules['budget_amount'] = array_merge(
+            is_array($existing) ? $existing : [$existing],
+            $this->bandRule(),
+        );
+
+        return $rules;
+    }
+
+    /**
+     * The rule that refuses a tier contradicting the budget (BR-003).
+     *
+     * WHY THIS IS A CLOSURE AND NOT `withValidator()`
+     *
+     * `withValidator()` is only called by Laravel's `validateResolved()`, and this class is
+     * deliberately never resolved that way — the wizard constructs it directly and hands the rule
+     * arrays to Livewire's `validate()`, because `afterResolving` would validate the empty HTTP
+     * request instead. A `withValidator()` hook here would be dead code that looks like a guard.
+     *
+     * This is the one rule in the application that compares TWO fields, so it belongs on the
+     * field the requestor would change rather than beside the amount they typed correctly.
+     *
+     * KEYED ON `budget_amount`, NOT `proposed_tier_id` — and that choice is about where the
+     * message is SEEN. The tier is chosen on step 1 and the amount entered on step 3, so at the
+     * moment this fires the tier control is not on screen. An error against an invisible field is
+     * one the requestor cannot resolve: they would be refused with no message anywhere and no way
+     * to find out why. Against the amount, the explanation appears next to what they just typed.
+     *
+     * @return array<int, mixed>
+     */
+    private function bandRule(): array
+    {
+        return [
+            function (string $attribute, mixed $value, \Closure $fail) {
+                $tierId = $this->value('proposed_tier_id');
+
+                // Nothing to compare. Whether an amount is REQUIRED is a separate question,
+                // answered by the tier field rules.
+                if (blank($tierId) || blank($value)) {
+                    return;
+                }
+
+                $check = app(TierBands::class)->check((int) $tierId, $value);
+
+                if ($check['status'] !== 'ok') {
+                    /*
+                     * `$value` IS PASSED IN, NOT RE-READ.
+                     *
+                     * The closure is given the amount being validated, and that is the
+                     * authoritative value. An earlier version called
+                     * `$this->value('budget_amount')` here instead — and because
+                     * `budget_amount` is not in the `withData()` array `Create::formRequest()`
+                     * builds, `value()` fell back to `input()`, found nothing in a Livewire
+                     * request, and formatted the empty string as "RM0.00".
+                     *
+                     * The message then read "A budget of RM0.00 is Tier 2 (RM50,000.01 and
+                     * above)" while the field beside it plainly said 80000 — a refusal that
+                     * contradicts the screen, which reads as the application being broken
+                     * rather than as the amount being wrong.
+                     *
+                     * This is the second time in this area that a value read through `value()`
+                     * was absent from `withData()`. The lesson generalises: a validation closure
+                     * should use the value it is GIVEN, and only reach for `value()` when the
+                     * rule genuinely needs a DIFFERENT field — which is the tier id here, and
+                     * the reason that one has to be in the array.
+                     */
+                    $fail($this->bandMessage($check, $value));
+                }
+            },
+        ];
+    }
+
+    /**
+     * What to say about a tier that does not agree with the amount.
+     *
+     * FOUR CASES, FOUR MESSAGES, and the distinction matters more than it looks. A single
+     * "the tier does not match the budget" would be shown for a GAP or an OVERLAP in the
+     * organisation's own bands — configuration faults the requestor cannot act on — and would
+     * send them to correct a field that is already right.
+     *
+     * @param  array{status: string, expected: Tier|null, matches: array<int, Tier>}  $check
+     * @param  mixed  $amount  The value being validated, passed in rather than re-read
+     */
+    private function bandMessage(array $check, mixed $amount): string
+    {
+        $formatted = 'RM'.number_format((float) $amount, 2);
+
+        return match ($check['status']) {
+            'mismatch' => "A budget of {$formatted} is {$check['expected']->name} "
+                ."({$check['expected']->bandLabel()}), not the tier selected. "
+                .'Change the tier on step 1, or correct the amount.',
+            'no_tier' => "No tier covers a budget of {$formatted}. "
+                .'The tier bands are incomplete — an administrator needs to check them.',
+            'overlap' => "A budget of {$formatted} falls into more than one tier ("
+                .implode(', ', array_map(fn ($t) => $t->name, $check['matches']))
+                .'). The tier bands overlap — an administrator needs to check them.',
+            default => 'The tier does not agree with the budget.',
+        };
     }
 
     /**
@@ -251,6 +364,23 @@ class ItRequestFormRequest extends FormRequest
                 $steps[$step][$field] = $rule;
             }
         }
+
+        /*
+         * The band check runs on step 3, where the amount is entered.
+         *
+         * Folding it into the step rather than leaving it to the final check is what makes the
+         * refusal happen while the requestor is looking at the field — pressing Continue on step
+         * 3 says "a budget of RM80,000 is Tier 2, not the tier selected", instead of letting them
+         * fill steps 3 and 4 and then be refused at the end over an answer given on step 1.
+         *
+         * APPENDED, not assigned. Assigning would drop the base rules for this field — the
+         * `nullable`, `numeric` and range constraints — so a tier's band check would quietly
+         * remove the validation that the amount is a number at all.
+         */
+        $steps[3]['budget_amount'] = array_merge(
+            $steps[3]['budget_amount'] ?? [],
+            $this->bandRule(),
+        );
 
         return $steps;
     }

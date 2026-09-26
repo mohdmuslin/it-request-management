@@ -14,6 +14,7 @@ use App\Models\Tier;
 use App\Models\User;
 use App\Services\AuditService;
 use App\Services\RequestNumberService;
+use App\Services\TierBands;
 use App\Services\TierFieldRules;
 use App\Services\WorkflowService;
 use Illuminate\Support\Facades\DB;
@@ -659,8 +660,20 @@ class Create extends Component
              * rendered as blank lines — which reads as "the data is missing" rather
              * than "the query is wrong", and is the sort of thing that survives a
              * test suite because nothing asserts the option TEXT.
+             *
+             * ONLY REQUESTOR-ASSIGNABLE TIERS APPEAR. Tier P is assigned by governance, so it is
+             * absent here rather than present-and-refused — a dropdown that offers something the
+             * form will reject is a trap, and the requestor has no way to know which option it
+             * is. `TierBands::selectable()` is the same filter the validation uses.
+             *
+             * The name carries the BAND, because the band is what decides the tier. A requestor
+             * choosing between "Tier 1" and "Tier 2" has to know RM50,000 is the boundary;
+             * choosing between "RM50,000.00 and below" and "RM50,001.00 and above" needs no
+             * separate explanation, and it is what the application will check the amount against.
              */
-            'tiers' => Tier::orderBy('sort_order')->get(['id', 'name']),
+            'tiers' => app(TierBands::class)->selectable()
+                ->map(fn (Tier $t) => ['id' => $t->id, 'name' => $t->bandedName()])
+                ->values(),
             'classifications' => Classification::orderBy('name')->get(['id', 'name']),
             'planStatuses' => BusinessPlanStatus::options(),
         ])->layout('components.layouts.app', ['title' => $this->title ?: 'New request']);

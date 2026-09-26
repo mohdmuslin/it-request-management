@@ -67,11 +67,20 @@ request is kept exactly as you left it. A draft is visible only to you.
 | Project Sponsor | The person who approves it second. May be left blank |
 | Proposed tier, classification | **Your proposal.** Governance sets the authoritative values later |
 
-> **The tier changes what the rest of the form asks for.** Choose Tier 2 and the budget becomes
-> required; choose Tier 1 and it need not be filled in. Fields that do not apply to the tier you
-> pick are **not shown**, and a line above the gap names them — so an empty space is not a broken
-> screen. If you change the tier after typing, anything that no longer applies is **cleared**, and
-> a message tells you what went.
+> **The tier changes what the rest of the form asks for.** Choose Tier 2 and the budget source and
+> resources become required; choose Tier 1 and they need not be filled in. Fields that do not apply
+> to the tier you pick are **not shown**, and a line above the gap names them — so an empty space is
+> not a broken screen. If you change the tier after typing, anything that no longer applies is
+> **cleared**, and a message tells you what went.
+
+> **The tier follows the budget**, so the amount is required whichever tier you pick. **Tier 1 is
+> RM50,000 and below; Tier 2 is above it.** If you choose Tier 1 and enter RM80,000, the form will
+> tell you the amount belongs to Tier 2 — that check is there so the tier is not simply whatever
+> somebody typed. To change the tier, go back to step 1.
+
+> **Tier P (Partnership) is not in the list.** A partnership is not a cost band — a RM20,000
+> collaboration and a RM2,000,000 one are both Tier P — so it is a judgement rather than an
+> arithmetic result. IT Governance sets it during completeness review.
 
 > **A named approver is accountable; a queue is not.** This is why the Owner and Sponsor are
 > specific people rather than "IT Management". A request with no named owner sits nowhere.
@@ -334,6 +343,8 @@ your notification.
 | A field I filled in has disappeared | The tier you chose does not use it, so it was cleared. A message above the form says which fields went |
 | Why is the budget field gone? | The tier does not ask for a budget. The line above the gap names the fields not applicable to it |
 | I switched tier and lost what I typed | Fields a tier does not use are cleared, so nothing is stored that means nothing for that tier. The message names what went. Choosing the tier early avoids this |
+| Why is my tier refused? | The amount belongs to a different tier. Tier 1 is RM50,000 and below; Tier 2 is above. Change the tier on step 1 or correct the amount |
+| Where is Tier P? | Partnership is not decided by cost, so IT Governance sets it during completeness review rather than you choosing it |
 | Where is my audit trail? | On the request detail screen, at the bottom. The system-wide Audit log screen is not built yet |
 
 ---

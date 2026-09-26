@@ -117,7 +117,16 @@ it('requires a field the tier marks required', function () {
 });
 
 it('does not require the same field for a tier that does not mark it', function () {
+    /*
+     * BOTH TIERS ARE SET EXPLICITLY.
+     *
+     * The seeder marks `budget_amount` required for every tier, because the tier bands decide the
+     * tier and so an amount is not optional detail — see `seedTierFieldRules()`. Relying on the
+     * seeded position would therefore make this test pass or fail for a reason unrelated to what
+     * it is about, which is that a rule on one tier does not leak to another.
+     */
     setRule($this->tier2->id, 'budget_amount', TierFieldRule::REQUIRED);
+    setRule($this->tier1->id, 'budget_amount', TierFieldRule::OPTIONAL);
 
     $request = (new ItRequestFormRequest)->withData([
         'proposed_tier_id' => $this->tier1->id,
@@ -407,10 +416,10 @@ it('accepts the same submission once the tier requirements are met', function ()
      * The other half: the rules must block the empty case WITHOUT blocking a correct one, or
      * they are not requirements, they are a wall.
      *
-     * The seeded Tier 2 position requires three fields, not one — budget amount, budget source
-     * and forecast resources. This supplies all three. An earlier version of this test supplied
-     * only the budget and failed with the other two, which was the seeder being read correctly
-     * and the test being written against an assumption.
+     * THE AMOUNT MUST FALL IN TIER 2'S BAND. This used to submit RM15,000 against Tier 2 and
+     * passed, because tiers had no bands. Now the band check refuses that pair — correctly, and
+     * with a message naming Tier 1 — so the test has to use an amount the tier actually covers.
+     * RM75,000 is inside "RM50,000.01 and above".
      */
     setRule($this->tier2->id, 'budget_amount', TierFieldRule::REQUIRED);
 
@@ -425,7 +434,7 @@ it('accepts the same submission once the tier requirements are met', function ()
         ->set('adhoc_justification', str_repeat('Because. ', 5))
         ->set('urgency', 'low')
         ->set('impact_if_not_implemented', str_repeat('Impact. ', 6))
-        ->set('budget_amount', '15000')
+        ->set('budget_amount', '75000')
         ->set('budget_source', 'IT operating budget')
         ->set('forecast_resources', str_repeat('Two analysts. ', 3))
         ->call('submit')
@@ -502,11 +511,18 @@ it('refuses an invented requirement value', function () {
 });
 
 it('records a rule change in the audit trail', function () {
-    // Who decided Tier 2 needs a budget, and when, is a governance question.
+    /*
+     * Who decided Tier 2 needs a budget, and when, is a governance question.
+     *
+     * The change is from HIDDEN to REQUIRED rather than to REQUIRED from the seeded state — the
+     * component only writes an audit row when something actually changed, and re-saving a rule
+     * that is already required is a no-op. Setting the same value and expecting a row would pass
+     * only while the seeded position happened to differ.
+     */
     $this->actingAs(asUser(UserRole::Administrator));
 
     Livewire::test(TierRules::class)
-        ->set('edits.'.$this->tier2->id.':budget_amount', TierFieldRule::REQUIRED)
+        ->set('edits.'.$this->tier2->id.':budget_amount', TierFieldRule::HIDDEN)
         ->call('save')
         ->assertHasNoErrors();
 

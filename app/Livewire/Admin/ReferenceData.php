@@ -7,6 +7,7 @@ use App\Models\GovernanceRoute;
 use App\Models\ReviewUnit;
 use App\Models\Tier;
 use App\Services\AuditService;
+use App\Services\TierBands;
 use Livewire\Component;
 
 /**
@@ -64,7 +65,21 @@ class ReferenceData extends Component
         $this->edits = [];
 
         foreach (Tier::orderBy('sort_order')->get() as $row) {
-            $this->edits['tier:'.$row->id] = ['name' => $row->name, 'is_active' => (bool) $row->is_active];
+            $this->edits['tier:'.$row->id] = [
+                'name' => $row->name,
+                'is_active' => (bool) $row->is_active,
+                /*
+                 * The band, as two nullable strings.
+                 *
+                 * Empty means unbounded, not zero. "RM50,001 and above" has no ceiling, and
+                 * recording one as 0 would make the tier cover nothing — the band would read
+                 * "RM50,001 to RM0", which the overlap check would then have to cope with as a
+                 * legitimate configuration.
+                 */
+                'budget_min' => $row->budget_min,
+                'budget_max' => $row->budget_max,
+                'assignable_by' => $row->assignable_by ?? Tier::BY_REQUESTOR,
+            ];
         }
 
         foreach (Classification::orderBy('name')->get() as $row) {
@@ -180,13 +195,190 @@ class ReferenceData extends Component
             $updates['requires_committee'] = (bool) $this->edits["{$kind}:{$id}"]['requires_committee'];
         }
 
+        if ($kind === 'tier') {
+            $band = $this->tierBandFrom($id);
+
+            if ($band === null) {
+                return;   // the error has already been added
+            }
+
+            $updates = array_merge($updates, $band);
+        }
+
         $row->update($updates);
 
         app(AuditService::class)->record('reference_data.updated', $row, $before, $row->fresh()->getAttributes());
 
+        if ($kind === 'tier') {
+            // The bands are cached per request and compared on every save.
+            app(TierBands::class)->forget();
+        }
+
         $this->loadEdits();
 
         $this->flash = 'Saved.';
+    }
+
+    /**
+     * Read, validate and return a tier's band from the edit state, or null if it is invalid.
+     *
+     * WHY THE OVERLAP CHECK IS HERE AND NOT ONLY ON THE SCREEN
+     *
+     * The screen could show a warning without refusing, and then the first symptom of an overlap
+     * is a requestor being told "a budget of RM50,000 falls into more than one tier" — a
+     * configuration fault surfacing as a message on somebody else's form, with no indication of
+     * what to do about it.
+     *
+     * So the save REFUSES. Two tiers claiming the same amount means "Tier 1 or Tier 2?" has two
+     * answers, and no arrangement of the rest of the application makes that correct.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function tierBandFrom(int $id): ?array
+    {
+        $key = "tier:{$id}";
+
+        $this->validate([
+            "edits.{$key}.budget_min" => ['nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+            "edits.{$key}.budget_max" => ['nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+            "edits.{$key}.assignable_by" => ['required', 'in:'.Tier::BY_REQUESTOR.','.Tier::BY_GOVERNANCE],
+        ], [
+            'edits.'.$key.'.budget_min.numeric' => 'The lower bound must be a number.',
+            'edits.'.$key.'.budget_max.numeric' => 'The upper bound must be a number.',
+        ], attributes: [
+            "edits.{$key}.budget_min" => 'lower bound',
+            "edits.{$key}.budget_max" => 'upper bound',
+        ]);
+
+        $edit = $this->edits[$key];
+
+        $min = $this->normaliseBound($edit['budget_min'] ?? null);
+        $max = $this->normaliseBound($edit['budget_max'] ?? null);
+
+        // An empty string from a cleared input is "unbounded", not zero.
+        if ($min === null && $max === null) {
+            $min = null;
+            $max = null;
+        }
+
+        if ($min !== null && $max !== null && bccomp($min, $max, 2) > 0) {
+            $this->addError("edits.{$key}.budget_max", 'The upper bound is below the lower bound, so no amount would fall in this tier.');
+
+            return null;
+        }
+
+        /*
+         * The overlap check, run against the PROPOSED state rather than the saved one.
+         *
+         * The row being edited is not yet updated, so the check has to see the new band. It is
+         * applied by building the candidate tier in memory and comparing it with the others —
+         * cheaper and clearer than writing first and rolling back, which would also mean a
+         * failed save left an audit row behind.
+         *
+         * The comparison itself lives in `TierBands`, so the screen and the request-time check
+         * cannot hold two versions of it.
+         */
+        $candidate = new Tier([
+            'budget_min' => $min,
+            'budget_max' => $max,
+            'assignable_by' => $edit['assignable_by'],
+            'is_active' => (bool) ($edit['is_active'] ?? true),
+        ]);
+        $candidate->id = $id;
+
+        foreach (TierBands::collisionsFor($candidate, $id) as $other) {
+            $this->addError(
+                "edits.{$key}.budget_min",
+                self::overlapMessage($candidate, $other)
+            );
+
+            return null;
+        }
+
+        return [
+            'budget_min' => $min,
+            'budget_max' => $max,
+            'assignable_by' => $edit['assignable_by'],
+        ];
+    }
+
+    /** '' and null both mean "no bound"; anything else becomes a two-decimal string. */
+    private function normaliseBound(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return number_format((float) $value, 2, '.', '');
+    }
+
+    /**
+     * What to tell an administrator whose band overlaps another.
+     *
+     * WHY THIS NAMES THE AMOUNT AND THE ORDER TO SAVE IN
+     *
+     * Moving a boundary takes TWO edits: the lower tier's ceiling goes up, and the upper tier's
+     * floor goes up with it. Between those two saves the bands overlap whatever order you choose
+     * — so whichever row is saved first is refused, and the administrator is left holding a
+     * correct intention that the screen will not accept.
+     *
+     * "This band overlaps Tier 2" states the fact and stops there. Naming the shared amount, and
+     * saying which edit to make first, turns a refusal into a procedure:
+     *
+     *   1. narrow the upper tier first (its floor moves ABOVE the new boundary), then
+     *   2. widen the lower tier (its ceiling moves UP to the new boundary).
+     *
+     * The reverse order has a moment where both bands contain the new boundary, and there is no
+     * arrangement of a single save that avoids it — the check is right to refuse, and the message
+     * has to carry the rest.
+     *
+     * The alternative considered was to allow the overlapping save and warn afterwards. That
+     * leaves an invalid configuration live, and the first symptom is a message on somebody else's
+     * request form, which is the failure this check exists to prevent.
+     */
+    public static function overlapMessage(Tier $candidate, Tier $other): string
+    {
+        $shared = self::sharedAmount($candidate, $other);
+
+        $amount = $shared === null
+            ? 'an amount'
+            : 'RM'.number_format((float) $shared, 2);
+
+        return "{$amount} would fall into both this tier ({$candidate->bandLabel()}) and "
+            ."{$other->name} ({$other->bandLabel()}), so there would be two answers to which tier "
+            .'it is. Both bounds are inclusive, so neighbouring bands must not touch: RM50,000 and '
+            .'RM50,001, never RM50,000 and RM50,000. '
+            .'To move a boundary, save the HIGHER tier first — narrow it, then widen the lower one. '
+            .'Between the two saves the bands overlap whichever order you use, so the first save '
+            .'must leave no shared amount.';
+    }
+
+    /**
+     * The lowest amount both bands contain, or null when there is no single value worth naming.
+     *
+     * For the common case — two tiers touching at a boundary — this is the boundary itself, which
+     * is the number the administrator needs to see.
+     *
+     * The lowest shared amount is the HIGHER of the two floors, because a band contains an amount
+     * only from its own floor upwards. A null floor means the band has no lower limit, so the
+     * other band's floor is the answer; only when BOTH are unbounded below is there no single
+     * value to name, because then every amount at all is in both.
+     */
+    private static function sharedAmount(Tier $a, Tier $b): ?string
+    {
+        $floors = array_filter(
+            [(string) ($a->budget_min ?? ''), (string) ($b->budget_min ?? '')],
+            fn (string $f) => $f !== '',
+        );
+
+        if ($floors === []) {
+            return null;
+        }
+
+        // The highest floor among those the bands actually have.
+        usort($floors, fn (string $x, string $y) => bccomp($x, $y, 2));
+
+        return end($floors);
     }
 
     /**

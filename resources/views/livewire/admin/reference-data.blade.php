@@ -129,6 +129,70 @@
                                 </label>
                             @endif
 
+                            @if ($section['kind'] === 'tier')
+                                {{--
+                                    The band, and who decides the tier.
+
+                                    Two nullable bounds rather than a threshold and a direction:
+                                    "RM50,000 and below" and "RM50,001 and above" read as one
+                                    rule, but a single threshold cannot express Tier P, which is
+                                    neither. Empty means UNBOUNDED, not zero — "RM50,001 and above"
+                                    has no ceiling, and recording one as 0 would describe a band
+                                    that covers nothing.
+
+                                    The bounds are inclusive at both ends, so neighbouring bands
+                                    must not touch: RM50,000 and RM50,001, never RM50,000 and
+                                    RM50,000. Saving an overlap is refused, because an amount
+                                    matching both would have two answers.
+                                --}}
+                                <div class="w-full border-t border-slate-100 pt-3">
+                                    <div class="flex flex-wrap items-end gap-3">
+                                        <div>
+                                            <label for="min-{{ $key }}" class="block text-xs font-medium text-slate-600">
+                                                From (RM)
+                                            </label>
+                                            <input id="min-{{ $key }}" type="number" step="0.01" min="0" placeholder="no lower bound"
+                                                   wire:model="edits.{{ $key }}.budget_min"
+                                                   class="mt-1 w-36 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                                            @error("edits.{$key}.budget_min")
+                                                <p class="mt-1 text-xs font-medium text-red-700" role="alert">{{ $message }}</p>
+                                            @enderror
+                                        </div>
+
+                                        <div>
+                                            <label for="max-{{ $key }}" class="block text-xs font-medium text-slate-600">
+                                                Up to (RM)
+                                            </label>
+                                            <input id="max-{{ $key }}" type="number" step="0.01" min="0" placeholder="no upper bound"
+                                                   wire:model="edits.{{ $key }}.budget_max"
+                                                   class="mt-1 w-36 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                                            @error("edits.{$key}.budget_max")
+                                                <p class="mt-1 text-xs font-medium text-red-700" role="alert">{{ $message }}</p>
+                                            @enderror
+                                        </div>
+
+                                        <div>
+                                            <label for="by-{{ $key }}" class="block text-xs font-medium text-slate-600">
+                                                Chosen by
+                                            </label>
+                                            <select id="by-{{ $key }}" wire:model="edits.{{ $key }}.assignable_by"
+                                                    class="mt-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                                                <option value="requestor">Requestor — from the amount</option>
+                                                <option value="governance">IT Governance</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <p class="mt-2 text-xs text-slate-500">
+                                        Both bounds are <strong>inclusive</strong>, so adjacent tiers must not touch:
+                                        RM50,000 and RM50,001, never RM50,000 and RM50,000.
+                                        Leave a bound empty for "no limit". A tier with <strong>no bounds at all</strong>
+                                        is not decided by budget — which is how Tier P works, and why it is chosen by
+                                        governance rather than offered to the requestor.
+                                    </p>
+                                </div>
+                            @endif
+
                             <label class="flex cursor-pointer items-center gap-2 text-xs">
                                 <input type="checkbox" wire:model="edits.{{ $key }}.is_active"
                                        class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
