@@ -1,5 +1,7 @@
 @php
     use App\Enums\BusinessPlanStatus;
+    use App\Models\TierFieldRule;
+    use App\Services\TierFieldRules;
 
     $steps = [
         1 => ['label' => 'Request information', 'summary' => 'What is being requested, and who owns it'],
@@ -12,6 +14,22 @@
     // comparisons, so the two fields cannot both be shown at once.
     $aligned = $business_plan_status === BusinessPlanStatus::Aligned->value;
     $adHoc = $business_plan_status === BusinessPlanStatus::AdHoc->value;
+
+    /*
+     * THE TIER'S RULES, RESOLVED ONCE FOR THIS RENDER (BR-003).
+     *
+     * Resolved in the view rather than pushed in as props, because three things need it here —
+     * which fields to show, which to mark required, and the note explaining why a field is
+     * missing — and threading one array through a component that already takes twelve would
+     * make the dependency harder to see, not easier.
+     *
+     * It reaches the same service the form request and the component use, so the three cannot
+     * disagree about what the rules are.
+     */
+    $tierRules = app(TierFieldRules::class)->forTier($proposed_tier_id);
+    $ruleFor = fn (string $field): string => $tierRules[$field] ?? TierFieldRule::OPTIONAL;
+    $isHidden = fn (string $field): bool => $ruleFor($field) === TierFieldRule::HIDDEN;
+    $isRequired = fn (string $field): bool => $ruleFor($field) === TierFieldRule::REQUIRED;
 @endphp
 
 <div class="mx-auto max-w-4xl">
@@ -195,41 +213,74 @@
 
             @elseif ($step === 3)
                 {{-- =============== STEP 3 ============================== --}}
+                @if (collect(['budget_amount', 'funding_type', 'budget_source', 'budget_code', 'proposed_start_date', 'target_completion_date', 'forecast_resources'])->contains($isHidden))
+                    {{--
+                        A field this tier does not use is NAMED here rather than silently absent.
+
+                        An empty gap where a budget used to be reads as a bug, and the requestor
+                        has no way to tell "not applicable to Tier 1" from "the form failed to
+                        load". One line answers it.
+                    --}}
+                    <p class="mb-4 rounded-lg bg-slate-50 px-4 py-3 text-xs leading-relaxed text-slate-600 ring-1 ring-slate-200">
+                        Not applicable to <strong>{{ $tiers->firstWhere('id', $proposed_tier_id)?->name ?? 'this tier' }}</strong>:
+                        {{ collect(['budget_amount' => 'Budget amount', 'funding_type' => 'Funding type', 'budget_source' => 'Budget source', 'budget_code' => 'Budget code', 'proposed_start_date' => 'Proposed start date', 'target_completion_date' => 'Target completion', 'forecast_resources' => 'Resources required'])->filter(fn ($label, $field) => $isHidden($field))->join(', ') }}.
+                    </p>
+                @endif
+
                 <div class="grid gap-5 sm:grid-cols-2">
 
-                    <x-ui.field name="budget_amount" label="Budget amount (RM)"
-                                hint="Figures only. Leave blank if not yet costed.">
-                        <x-ui.control model="budget_amount" name="budget_amount" type="number" step="0.01" min="0" />
-                    </x-ui.field>
-
-                    <x-ui.field name="funding_type" label="Funding type">
-                        <x-ui.control model="funding_type" name="funding_type" type="text"
-                                      placeholder="e.g. CapEx, OpEx" />
-                    </x-ui.field>
-
-                    <x-ui.field name="budget_source" label="Budget source">
-                        <x-ui.control model="budget_source" name="budget_source" type="text" />
-                    </x-ui.field>
-
-                    <x-ui.field name="budget_code" label="Budget code">
-                        <x-ui.control model="budget_code" name="budget_code" type="text" />
-                    </x-ui.field>
-
-                    <x-ui.field name="proposed_start_date" label="Proposed start date">
-                        <x-ui.control model="proposed_start_date" name="proposed_start_date" type="date" />
-                    </x-ui.field>
-
-                    <x-ui.field name="target_completion_date" label="Target completion"
-                                hint="Cannot be earlier than the start date.">
-                        <x-ui.control model="target_completion_date" name="target_completion_date" type="date" />
-                    </x-ui.field>
-
-                    <div class="sm:col-span-2">
-                        <x-ui.field name="forecast_resources" label="Resources required"
-                                    hint="People, licences, hardware, vendor effort.">
-                            <x-ui.control model="forecast_resources" name="forecast_resources" type="textarea" rows="3" />
+                    @unless ($isHidden('budget_amount'))
+                        <x-ui.field name="budget_amount" label="Budget amount (RM)"
+                                    :required="$isRequired('budget_amount')"
+                                    :hint="$isRequired('budget_amount')
+                                        ? 'Required for this tier.'
+                                        : 'Figures only. Leave blank if not yet costed.'">
+                            <x-ui.control model="budget_amount" name="budget_amount" type="number" step="0.01" min="0" />
                         </x-ui.field>
-                    </div>
+                    @endunless
+
+                    @unless ($isHidden('funding_type'))
+                        <x-ui.field name="funding_type" label="Funding type" :required="$isRequired('funding_type')">
+                            <x-ui.control model="funding_type" name="funding_type" type="text"
+                                          placeholder="e.g. CapEx, OpEx" />
+                        </x-ui.field>
+                    @endunless
+
+                    @unless ($isHidden('budget_source'))
+                        <x-ui.field name="budget_source" label="Budget source" :required="$isRequired('budget_source')">
+                            <x-ui.control model="budget_source" name="budget_source" type="text" />
+                        </x-ui.field>
+                    @endunless
+
+                    @unless ($isHidden('budget_code'))
+                        <x-ui.field name="budget_code" label="Budget code" :required="$isRequired('budget_code')">
+                            <x-ui.control model="budget_code" name="budget_code" type="text" />
+                        </x-ui.field>
+                    @endunless
+
+                    @unless ($isHidden('proposed_start_date'))
+                        <x-ui.field name="proposed_start_date" label="Proposed start date" :required="$isRequired('proposed_start_date')">
+                            <x-ui.control model="proposed_start_date" name="proposed_start_date" type="date" />
+                        </x-ui.field>
+                    @endunless
+
+                    @unless ($isHidden('target_completion_date'))
+                        <x-ui.field name="target_completion_date" label="Target completion"
+                                    :required="$isRequired('target_completion_date')"
+                                    hint="Cannot be earlier than the start date.">
+                            <x-ui.control model="target_completion_date" name="target_completion_date" type="date" />
+                        </x-ui.field>
+                    @endunless
+
+                    @unless ($isHidden('forecast_resources'))
+                        <div class="sm:col-span-2">
+                            <x-ui.field name="forecast_resources" label="Resources required"
+                                        :required="$isRequired('forecast_resources')"
+                                        hint="People, licences, hardware, vendor effort.">
+                                <x-ui.control model="forecast_resources" name="forecast_resources" type="textarea" rows="3" />
+                            </x-ui.field>
+                        </div>
+                    @endunless
                 </div>
 
             @else
@@ -258,32 +309,53 @@
                         </div>
                     </div>
 
+                    @if (collect(['risk_summary', 'mitigation_plan', 'dependencies_constraints', 'in_scope', 'out_of_scope'])->contains($isHidden))
+                        {{-- Named for the same reason as step 3: a gap where a field used to be
+                             reads as a broken screen unless something says why it is gone. --}}
+                        <p class="rounded-lg bg-slate-50 px-4 py-3 text-xs leading-relaxed text-slate-600 ring-1 ring-slate-200">
+                            Not applicable to <strong>{{ $tiers->firstWhere('id', $proposed_tier_id)?->name ?? 'this tier' }}</strong>:
+                            {{ collect(['risk_summary' => 'Risks', 'mitigation_plan' => 'Mitigation', 'dependencies_constraints' => 'Dependencies and constraints', 'in_scope' => 'In scope', 'out_of_scope' => 'Out of scope'])->filter(fn ($label, $field) => $isHidden($field))->join(', ') }}.
+                        </p>
+                    @endif
+
                     <x-ui.field name="impact_if_not_implemented" label="What happens if this is not implemented?" required
                                 hint="The field approvers rely on most. Be specific.">
                         <x-ui.control model="impact_if_not_implemented" name="impact_if_not_implemented" type="textarea" rows="3" />
                     </x-ui.field>
 
-                    <x-ui.field name="risk_summary" label="Risks">
-                        <x-ui.control model="risk_summary" name="risk_summary" type="textarea" rows="3" />
-                    </x-ui.field>
+                    @unless ($isHidden('risk_summary'))
+                        <x-ui.field name="risk_summary" label="Risks" :required="$isRequired('risk_summary')">
+                            <x-ui.control model="risk_summary" name="risk_summary" type="textarea" rows="3" />
+                        </x-ui.field>
+                    @endunless
 
-                    <x-ui.field name="mitigation_plan" label="Mitigation">
-                        <x-ui.control model="mitigation_plan" name="mitigation_plan" type="textarea" rows="3" />
-                    </x-ui.field>
+                    @unless ($isHidden('mitigation_plan'))
+                        <x-ui.field name="mitigation_plan" label="Mitigation" :required="$isRequired('mitigation_plan')">
+                            <x-ui.control model="mitigation_plan" name="mitigation_plan" type="textarea" rows="3" />
+                        </x-ui.field>
+                    @endunless
 
-                    <x-ui.field name="dependencies_constraints" label="Dependencies and constraints">
-                        <x-ui.control model="dependencies_constraints" name="dependencies_constraints" type="textarea" rows="3" />
-                    </x-ui.field>
+                    @unless ($isHidden('dependencies_constraints'))
+                        <x-ui.field name="dependencies_constraints" label="Dependencies and constraints"
+                                    :required="$isRequired('dependencies_constraints')">
+                            <x-ui.control model="dependencies_constraints" name="dependencies_constraints" type="textarea" rows="3" />
+                        </x-ui.field>
+                    @endunless
 
                     <div class="grid gap-5 sm:grid-cols-2">
-                        <x-ui.field name="in_scope" label="In scope">
-                            <x-ui.control model="in_scope" name="in_scope" type="textarea" rows="3" />
-                        </x-ui.field>
+                        @unless ($isHidden('in_scope'))
+                            <x-ui.field name="in_scope" label="In scope" :required="$isRequired('in_scope')">
+                                <x-ui.control model="in_scope" name="in_scope" type="textarea" rows="3" />
+                            </x-ui.field>
+                        @endunless
 
-                        <x-ui.field name="out_of_scope" label="Out of scope"
-                                    hint="Naming what is excluded prevents the commonest dispute later.">
-                            <x-ui.control model="out_of_scope" name="out_of_scope" type="textarea" rows="3" />
-                        </x-ui.field>
+                        @unless ($isHidden('out_of_scope'))
+                            <x-ui.field name="out_of_scope" label="Out of scope"
+                                        :required="$isRequired('out_of_scope')"
+                                        hint="Naming what is excluded prevents the commonest dispute later.">
+                                <x-ui.control model="out_of_scope" name="out_of_scope" type="textarea" rows="3" />
+                            </x-ui.field>
+                        @endunless
                     </div>
 
                     {{-- What the requestor is about to hand over. --}}

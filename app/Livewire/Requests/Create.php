@@ -14,6 +14,7 @@ use App\Models\Tier;
 use App\Models\User;
 use App\Services\AuditService;
 use App\Services\RequestNumberService;
+use App\Services\TierFieldRules;
 use App\Services\WorkflowService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -377,6 +378,50 @@ class Create extends Component
         $this->division_id = null;
     }
 
+    /**
+     * The tier changed, so the fields it governs changed with it (BR-003).
+     *
+     * WHY THIS CLEARS RATHER THAN ONLY RE-VALIDATING
+     *
+     * A tier that hides a field must not leave a value in it. Switching from Tier 2 to Tier 1
+     * after typing a budget would otherwise carry the budget into a tier where budget does not
+     * apply — and the request would be stored with a number in a column that means nothing for
+     * that tier. The validation rule refuses a supplied value, so leaving it would make the form
+     * unsubmittable with an error pointing at a field the user can no longer see.
+     *
+     * That last part is the reason this is a clear and not a warning: a hidden field that fails
+     * validation is the worst of both — invisible and blocking.
+     *
+     * The flash names what was cleared, because silently discarding something somebody typed is
+     * worse than the data loss itself.
+     */
+    public function updatedProposedTierId(): void
+    {
+        $rules = app(TierFieldRules::class);
+
+        $cleared = [];
+
+        foreach ($rules->hiddenFor($this->proposed_tier_id) as $field) {
+            if (property_exists($this, $field) && filled($this->{$field})) {
+                $this->{$field} = null;
+                $cleared[] = TierFieldRules::label($field);
+            }
+        }
+
+        $this->flash = $cleared === []
+            ? ''
+            : 'Not used for this tier, so cleared: '.implode(', ', $cleared).'.';
+
+        /*
+         * Validation errors from the previous tier are dropped.
+         *
+         * They were raised against a rule set that no longer applies — "budget amount is
+         * required" is a stale message the moment the tier changes to one that hides it, and a
+         * message the user cannot make go away by fixing anything.
+         */
+        $this->resetErrorBag();
+    }
+
     /** Validate one step against its slice of the shared rule set. */
     private function validateStep(int $step): void
     {
@@ -436,10 +481,24 @@ class Create extends Component
      * `app(ItRequestFormRequest::class)` validate the current HTTP request instead,
      * which in a Livewire action is empty — so every required field fails at once
      * with a message that looks like the user's data was lost.
+     *
+     * EVERY VALUE A CONDITIONAL RULE READS MUST BE LISTED HERE.
+     *
+     * `proposed_tier_id` is the tier-driven rules (BR-003), `business_plan_status` the
+     * business-plan branch, `urgency` the urgency justification. Omitting one does not throw —
+     * `value()` falls back to `input()`, which is empty in a Livewire action — so the branch
+     * silently evaluates false and the field it guards is never required.
+     *
+     * That is exactly what happened to `proposed_tier_id`: the tier rules were written, the
+     * service resolved them correctly, and no rule ever applied because the form never saw a
+     * tier. The symptom was a request submitting without a budget the tier demanded, which looks
+     * like a validation gap rather than a missing array key.
      */
     private function formRequest(): ItRequestFormRequest
     {
         return (new ItRequestFormRequest)->withData([
+            'proposed_tier_id' => $this->proposed_tier_id,
+            'proposed_classification_id' => $this->proposed_classification_id,
             'business_plan_status' => $this->business_plan_status,
             'urgency' => $this->urgency,
         ]);

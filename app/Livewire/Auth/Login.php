@@ -3,6 +3,8 @@
 namespace App\Livewire\Auth;
 
 use App\Enums\UserRole;
+use App\Exceptions\IdentityNotConfiguredException;
+use App\Services\IdentityManager;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
@@ -64,7 +66,36 @@ class Login extends Component
     {
         $this->validate();
 
-        if (! Auth::attempt(['email' => $this->email, 'password' => $this->password], $this->remember)) {
+        /*
+         * SIGN-IN GOES THROUGH THE CONFIGURED IDENTITY PROVIDER (FR-001).
+         *
+         * This used to call `Auth::attempt()` here. The decision is unchanged — `LocalProvider`
+         * makes exactly that call — but it now sits behind the contract, so setting
+         * `ITREQUEST_IDENTITY_DRIVER=entra` changes the implementation without touching this
+         * screen.
+         *
+         * `fallback()` rather than `provider()`: with SSO selected and an app registration still
+         * pending, refusing to serve a login form would turn a configuration decision into an
+         * outage for everybody. The misconfiguration is logged rather than hidden.
+         */
+        $provider = app(IdentityManager::class)->fallback();
+
+        /*
+         * A redirect provider cannot be signed into from this form.
+         *
+         * Saying so beats a failed credential check the user cannot act on: their account is
+         * fine, and the button they need is on the page. The message names the situation rather
+         * than the cause, because the cause is an administrator's configuration.
+         */
+        if ($provider->requiresRedirect()) {
+            $this->addError('email', 'This system signs in through your organisation account. Use the button above.');
+
+            return;
+        }
+
+        $user = $provider->authenticate($this->email, $this->password);
+
+        if (! $user) {
             /*
              * One message for both failure cases, deliberately.
              *
@@ -82,27 +113,65 @@ class Login extends Component
             return;
         }
 
-        $user = Auth::user();
-
         /*
-         * A deactivated account is refused AFTER the credentials check.
+         * A deactivated account is refused AFTER the credentials check and BEFORE the session.
          *
-         * Checking first would reveal that the address exists. Checking after means
-         * a correct password on a disabled account does not get in, and the message
-         * says why — which a genuine employee needs, because the alternative is
-         * them concluding the system is broken.
+         * Checking first would reveal that the address exists. Checking here means a correct
+         * password on a disabled account never opens a session at all — the request ends with
+         * the user anonymous, which is simpler to reason about than logging in and immediately
+         * out. The provider returns a `User` rather than a guard result, so this is the earliest
+         * point at which the account's state can be consulted, and it is still before any
+         * authenticated state exists.
+         *
+         * The message says why, because the alternative is a genuine employee concluding the
+         * system is broken.
          */
         if (! $user->is_active) {
-            Auth::logout();
+            $this->password = '';
 
             $this->addError('email', 'This account has been deactivated. Speak to an administrator.');
 
             return;
         }
 
+        // Credentials are verified and the account is usable: now open the session.
+        Auth::login($user, $this->remember);
+
         session()->regenerate();
 
         $this->redirect($this->landingUrlFor($user), navigate: true);
+    }
+
+    /**
+     * Start a redirect sign-in, or explain why it cannot start.
+     *
+     * Kept on the component rather than a controller so the error lands in the same place as a
+     * failed password, and the user has one screen to look at.
+     */
+    public function redirectToProvider(): void
+    {
+        try {
+            $provider = app(IdentityManager::class)->provider();
+        } catch (IdentityNotConfiguredException $e) {
+            /*
+             * The problem text is shown, not swallowed.
+             *
+             * It names the missing environment variable and where to find it. An administrator
+             * reading "Entra is not configured" has to guess; reading "ENTRA_TENANT_ID is not
+             * set — find it in the Azure portal under App registrations" they do not.
+             */
+            $this->addError('email', 'Single sign-on is not available yet. '.$e->getMessage());
+
+            return;
+        }
+
+        if (! $provider->requiresRedirect()) {
+            $this->addError('email', 'This system signs in with an email address and password.');
+
+            return;
+        }
+
+        $this->redirect($provider->redirectUrl(), navigate: false);
     }
 
     /**

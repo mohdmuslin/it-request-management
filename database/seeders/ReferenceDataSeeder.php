@@ -13,6 +13,7 @@ use App\Models\ReviewUnit;
 use App\Models\Role;
 use App\Models\StageDueDay;
 use App\Models\Tier;
+use App\Models\TierFieldRule;
 use App\Models\WorkflowStage;
 use Illuminate\Database\Seeder;
 
@@ -35,6 +36,74 @@ class ReferenceDataSeeder extends Seeder
         $this->seedWorkflowStages();
         $this->seedStageDueDays();
         $this->seedClassificationReviewUnits();
+        $this->seedTierFieldRules();
+    }
+
+    /**
+     * Which fields each tier makes required (BR-003).
+     *
+     * THE STARTING POSITION, NOT THE RULE.
+     *
+     * The brief says conditional fields must be driven by tier and does not say which field for
+     * which tier — that is a business decision, and these are a defensible first draft chosen to
+     * be visible rather than neutral:
+     *
+     *   - **Tier 1** — a budget is not demanded and nothing is hidden. A small, well-understood
+     *     request should not need a cost code to be filed, and demanding one produces a zero
+     *     rather than an honest blank.
+     *   - **Tier 2** — the budget becomes required, because a request of this size is approved
+     *     against one, and `forecast_resources` too.
+     *   - **Tier P** — a partnership arrangement. The budget is required, and
+     *     `dependencies_constraints` is HIDDEN because a partnership with another organisation is
+     *     governed by the agreement rather than by an internal dependency list.
+     *
+     * A no-tier default row is seeded for `budget_amount` so the behaviour without a tier is
+     * explicit rather than an accident of there being no rows. Everything else with no row is
+     * optional — see the migration for why absence means optional.
+     *
+     * Deliberately NOT seeded: any rule on `business_plan_reference` or `adhoc_justification`.
+     * Those are conditionally required by the business-plan branch, and a tier rule that made one
+     * optional would let a request be submitted with neither a plan cited nor a reason given.
+     * `TierFieldRules::mayRelax()` documents the same exclusion.
+     */
+    private function seedTierFieldRules(): void
+    {
+        $tiers = Tier::pluck('id', 'code');
+
+        $rules = [
+            // [tier code or null, field, requirement]
+            [null, 'budget_amount', TierFieldRule::OPTIONAL],
+
+            ['tier_1', 'budget_amount', TierFieldRule::OPTIONAL],
+
+            ['tier_2', 'budget_amount', TierFieldRule::REQUIRED],
+            ['tier_2', 'budget_source', TierFieldRule::REQUIRED],
+            ['tier_2', 'forecast_resources', TierFieldRule::REQUIRED],
+
+            ['tier_p', 'budget_amount', TierFieldRule::REQUIRED],
+            ['tier_p', 'budget_code', TierFieldRule::REQUIRED],
+            ['tier_p', 'dependencies_constraints', TierFieldRule::HIDDEN],
+        ];
+
+        foreach ($rules as [$tierCode, $field, $requirement]) {
+            /*
+             * `updateOrCreate` rather than `create`.
+             *
+             * This seeder runs on every deploy, and it must not overwrite a rule an administrator
+             * changed — the whole point of the rules being data is that the business can edit
+             * them. Updating here would silently revert that on the next release, and the change
+             * would reappear days later with nobody connecting it to a deploy.
+             *
+             * So a row that exists is left alone; only a missing one is created.
+             */
+            TierFieldRule::firstOrCreate(
+                [
+                    'tier_id' => $tierCode === null ? null : ($tiers[$tierCode] ?? null),
+                    'field' => $field,
+                ],
+                ['requirement' => $requirement],
+            );
+        }
     }
 
     private function seedRoles(): void

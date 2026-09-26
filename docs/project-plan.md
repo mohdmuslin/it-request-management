@@ -343,28 +343,35 @@ the audit trail is complete.
 | `docs/user-guide.md` | ✅ Done |
 | `docs/compliance-matrix.md` — final status per requirement | ✅ Done |
 | `itrequest:uat` — the 15 acceptance scenarios, executable | ✅ Done |
-| 326 tests passing, Pint clean | ✅ Done |
+| **Identity seam** — `IdentityProvider` + `LocalProvider` + `EntraProvider`, driver is config | ✅ Done |
+| **Tier field rules (BR-003)** — fields made required, optional or hidden by tier, as data | ✅ Done |
+| 382 tests passing, Pint clean | ✅ Done |
 | UAT run-through against the live site | ⬜ Blocked on the email gate |
 | **Document upload (FR-006)** | ⬜ **Not built** — D-7 |
 | **Recommendations and Audit log screens** | ⬜ **Placeholders** — D-8 |
 | **Autosave and editable templates** | ⬜ **Not built** — D-9 |
-| **Identity provider interface (FR-001)** | ⬜ **Not built — documented as if it were** — D-10 |
+| **Entra run against a real tenant** | ⬜ **Code-complete, unproven** — D-10, needs an app registration |
 
 #### What the matrix review found
 
 Reviewing `compliance-matrix.md` against the source — every row checked against the code rather
 than against the design documents — found **four requirements reported as met that were not**.
 
-**1. The identity provider interface was never written (D-10).** This is the most serious, and it
-is different in kind from the others. `architecture.md` §4 lists `app/Contracts/` containing
-`IdentityProvider`; §6 shows the interface as a PHP code block and a driver table naming
-`LocalProvider` and `EntraProvider`. **None exists** — not as an interface, a stub, or a comment.
-`Auth\Login` calls `Auth::attempt()` directly, and the `identity` config array is read by nothing.
+**1. The identity provider interface was never written (D-10).** This was the most serious of the
+four, and it is different in kind from the others. `architecture.md` §4 lists `app/Contracts/`
+containing `IdentityProvider`; §6 shows the interface as a PHP code block and a driver table naming
+`LocalProvider` and `EntraProvider`. **None existed** — not as an interface, a stub, or a comment.
+`Auth\Login` called `Auth::attempt()` directly, and the `identity` config array was read by nothing.
 
 So FR-001 was reported as *Entra deferred, seam built*. More precisely: **neither was built.** The
-cost is not the code — the estimate already covers it — it is that the design document describes
+cost was not the code — the estimate already covered it — it was that the design document described
 the architecture in the present tense, and someone implementing SSO would search for
 `LocalProvider`, find nothing, and reasonably conclude the repository was incomplete.
+
+**Now built.** The decision on which provider is used is outstanding, so the requirement is met by
+making the answer a **configuration value rather than a code change** — which was the point. What
+remains is an app registration and one real sign-in; see D-10 for exactly what is proven and what
+is not.
 
 **2. Documents were never built (D-7).** The `attachments` table, the `Attachment` model, the MIME
 allow-list, the size cap and the private storage directory all exist — and there is no upload
@@ -388,18 +395,28 @@ every 30 seconds; there is only the explicit **Save draft** button. FR-013 cover
 well as reference data; templates are fixed strings.
 
 **Three further rows overstated their mechanism** without being absent features. FR-015 claimed
-"filters on all listed fields" and has no unit filter. BR-003 claimed conditional logic "driven by
-tier and classification", and the real conditions are on business-plan status and urgency —
-neither is a tier or a classification. BR-009 claimed system-managed fields are "not
-mass-assignable", and `status`, `current_stage`, `tier_id` and `classification_id` all are —
+"filters on all listed fields" and has no unit filter. BR-009 claimed system-managed fields are
+"not mass-assignable", and `status`, `current_stage`, `tier_id` and `classification_id` all are —
 protected by every form mapping fields explicitly, so the rule holds by discipline rather than by
 the model refusing.
+
+BR-003 claimed conditional logic "driven by tier and classification", and the real conditions were
+on business-plan status and urgency — neither is a tier or a classification. **That one has since
+been built**, because the rule as written was worth having: a tier now makes any governed field
+required, optional or hidden, and the rule is data an administrator edits rather than code.
 
 **The method was the problem.** `architecture.md` and `interface.md` describe the intended system
 accurately and in the present tense. A status document that cites them as evidence inherits their
 optimism, and nothing in a test suite reads a design document. **A compliance row may now cite
-only a file that exists** — and `architecture.md` §4 and §6 carry a note saying the tree is the
-intended layout rather than a directory listing.
+only a file that exists** — and `ci-assert-reference-data.php` enforces it, failing when a design
+document names a `*Service`, `*Provider`, `*Policy`, `*Middleware`, `*Source` or `*Controller`
+class that is not on disk.
+
+> **That check is bidirectional, and it earned its place immediately.** Implementing the identity
+> seam made `IdentityProvider`, `LocalProvider` and `EntraProvider` exist, and the check failed on
+> the next run with "'LocalProvider' exists now but architecture.md still says it was not built —
+> remove the stale note". Without the second direction the three would have stayed on the
+> known-missing list and the documents would have gone on describing a working seam as absent.
 
 **The installer closes a gap that would have made a production install unusable.** `DemoUserSeeder`
 refuses outside `local`/`testing` — deliberately, because it creates accounts with a known password

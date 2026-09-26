@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Controllers\ReportExportController;
+use App\Http\Controllers\SsoController;
 use App\Livewire\Admin\AuditLog;
 use App\Livewire\Admin\ReferenceData;
 use App\Livewire\Admin\Settings;
+use App\Livewire\Admin\TierRules;
 use App\Livewire\Admin\Users;
 use App\Livewire\Auth\Login;
 use App\Livewire\Dashboard;
@@ -38,6 +40,20 @@ Route::redirect('/', '/dashboard');
 */
 Route::middleware('guest')->group(function () {
     Route::get('/login', Login::class)->name('login');
+
+    /*
+     * Redirect sign-in (FR-001).
+     *
+     * The callback URL must be registered with the identity provider EXACTLY as it appears here,
+     * including the scheme and any trailing path. A mismatch is the commonest cause of a failed
+     * sign-in, and the provider reports it as an error on ITS page — so nothing appears in this
+     * application's log and the only symptom is a browser landing back on the provider.
+     *
+     * Both routes are under `guest`, so an already-signed-in user opening a stale callback link
+     * is sent onward rather than having their session replaced by whatever that link contained.
+     */
+    Route::get('/auth/redirect', [SsoController::class, 'redirect'])->name('sso.redirect');
+    Route::get('/auth/callback', [SsoController::class, 'callback'])->name('sso.callback');
 });
 
 Route::post('/logout', function () {
@@ -117,6 +133,7 @@ Route::middleware('auth')->group(function () {
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/reference', ReferenceData::class)->name('reference.index');
         Route::get('/settings', Settings::class)->name('settings.index');
+        Route::get('/tier-rules', TierRules::class)->name('tier-rules.index');
         Route::get('/users', Users::class)->name('users.index');
         Route::get('/audit', AuditLog::class)->name('audit.index');
     });

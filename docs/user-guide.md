@@ -19,7 +19,9 @@ contents below are grouped so you can read only yours.
 Everything you can do is decided by the **roles** on your account. If a menu is missing, you
 do not hold the role for it — and the sidebar's **Your scope** note tells you what you can
 see. Hiding a menu is not what stops you: the server checks every action independently.
-
+> **How you sign in depends on how the system is set up.** You may be asked for an email address
+> and password, or offered a **Sign in with your organisation account** button that takes you to
+> Microsoft and back. Both end in the same place. Nothing about the work below changes.
 ---
 
 ## 1. The journey at a glance
@@ -61,9 +63,15 @@ request is kept exactly as you left it. A draft is visible only to you.
 | Title | A short name. Make it recognisable in a list a year from now, not "New laptop" |
 | Request date | Defaults to today |
 | Department, Division | Where the request belongs |
-| **Project Owner** | The person who will **approve it first**. Pick a named person, not a queue |
+| Project Owner | The person who will **approve it first**. Pick a named person, not a queue |
 | Project Sponsor | The person who approves it second. May be left blank |
 | Proposed tier, classification | **Your proposal.** Governance sets the authoritative values later |
+
+> **The tier changes what the rest of the form asks for.** Choose Tier 2 and the budget becomes
+> required; choose Tier 1 and it need not be filled in. Fields that do not apply to the tier you
+> pick are **not shown**, and a line above the gap names them — so an empty space is not a broken
+> screen. If you change the tier after typing, anything that no longer applies is **cleared**, and
+> a message tells you what went.
 
 > **A named approver is accountable; a queue is not.** This is why the Owner and Sponsor are
 > specific people rather than "IT Management". A request with no named owner sits nowhere.
@@ -323,6 +331,9 @@ your notification.
 | What does "Approved with conditions" mean? | Approved, with the conditions recorded. Look at the approval, and at the governance record for how they were carried forward |
 | My request is approved — is it finished? | Not necessarily. It still needs the technical recommendations, the route, and — on the Full route — the committee |
 | Why is a due date different from when I expected? | Targets are in **business days** and skip public holidays |
+| A field I filled in has disappeared | The tier you chose does not use it, so it was cleared. A message above the form says which fields went |
+| Why is the budget field gone? | The tier does not ask for a budget. The line above the gap names the fields not applicable to it |
+| I switched tier and lost what I typed | Fields a tier does not use are cleared, so nothing is stored that means nothing for that tier. The message names what went. Choosing the tier early avoids this |
 | Where is my audit trail? | On the request detail screen, at the bottom. The system-wide Audit log screen is not built yet |
 
 ---

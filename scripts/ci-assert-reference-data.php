@@ -175,9 +175,6 @@ echo "\nDesign documents cite only classes that exist\n";
 
 /** Documented as not built. See compliance-matrix.md D-7 to D-10 and architecture.md §4, §6. */
 $knownPhantoms = [
-    'IdentityProvider',      // D-10 — described in architecture.md §6, never written
-    'LocalProvider',         // D-10
-    'EntraProvider',         // D-10 / D-1
     'HolidaySource',         // planned integration contract, never written
     'RequestPolicy',         // named in architecture.md §4; the policy is ItRequestPolicy
     'ApprovalPolicy',        // named in architecture.md §4; not written
@@ -187,6 +184,18 @@ $knownPhantoms = [
     'ConsolidationService',  // named in architecture.md §4; the work is in GovernanceService
     'ReferenceDataService',  // named in architecture.md §4; the work is in the Livewire components
 ];
+
+/*
+ * REMOVED FROM THIS LIST: IdentityProvider, LocalProvider, EntraProvider.
+ *
+ * The check flagged them the moment the identity seam was implemented — "'IdentityProvider' exists
+ * now but the docs still say it was not built" — which is the second direction doing exactly its
+ * job. Removing them here and correcting the prose is the response the message asks for.
+ *
+ * That is the whole reason the list is bidirectional: without it, the three would have stayed
+ * listed, the check would have gone on passing, and the documents would have gone on describing a
+ * working identity seam as missing for as long as nobody read them.
+ */
 
 $docNames = glob(__DIR__.'/../docs/*.md') ?: [];
 $cited = [];

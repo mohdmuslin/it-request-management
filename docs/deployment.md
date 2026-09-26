@@ -346,7 +346,79 @@ told anything.
 
 ---
 
-## 8. Operating without a shell
+## 8. Enterprise sign-in (FR-001)
+
+**Currently local email and password.** Single sign-on is implemented and configured with four
+values, but **it has never been run against a real tenant** — see `compliance-matrix.md` D-10 for
+what is proven and what is not.
+
+### 8.1 What you need to supply
+
+| Setting | Where it comes from | Notes |
+|---|---|---|
+| `ENTRA_TENANT_ID` | Azure portal → **Microsoft Entra ID** → Overview → Tenant ID | A GUID. Not the domain name |
+| `ENTRA_CLIENT_ID` | **App registrations** → your app → Overview → Application (client) ID | |
+| `ENTRA_CLIENT_SECRET` | **Certificates & secrets** → New client secret | **Copy it immediately.** The portal never shows it again, and it expires — note the date |
+| `ENTRA_REDIRECT_URI` | You choose it; it must be registered | Use `https://itrequest.mwstay.com/auth/callback` |
+
+### 8.2 Register the redirect URI exactly
+
+In **App registrations → Authentication → Redirect URIs**, add:
+
+```
+https://itrequest.mwstay.com/auth/callback
+```
+
+It must match character for character — scheme, host, path, no trailing slash. A mismatch is the
+commonest cause of a failed sign-in, and it fails **on Microsoft's page**, so nothing appears in
+this application's log and the only symptom is a browser that lands back on Microsoft.
+
+Grant **API permissions** for `openid`, `profile`, `email` and `User.Read`, and grant admin consent.
+
+### 8.3 Switch it on
+
+```ini
+ITREQUEST_IDENTITY_DRIVER=entra
+ENTRA_TENANT_ID=...
+ENTRA_CLIENT_ID=...
+ENTRA_CLIENT_SECRET=...
+ENTRA_REDIRECT_URI=https://itrequest.mwstay.com/auth/callback
+```
+
+Then clear the cached configuration — `itrequest:deploy` does this, or run `config:clear` by a
+one-off cron job.
+
+**The sign-in screen changes to a button.** If it still shows a password form, or shows a warning
+that SSO is selected but not configured, the values are incomplete — and the warning names the
+missing one.
+
+### 8.4 What to expect on the first attempt
+
+| Symptom | Cause |
+|---|---|
+| A warning on the sign-in screen naming a setting | That value is blank or mistyped. The message says which |
+| Redirected back to the provider with an error | The redirect URI does not match what is registered |
+| `AADSTS7000215: invalid client secret` | The secret was mistyped, or has expired. They expire |
+| "Sign-in could not be completed" | One of the checks refused the token — the reason is in `storage/logs/laravel.log` and deliberately not on screen |
+| Signs in, then immediately out | The account is deactivated here. Microsoft will authenticate anybody in the tenant; whether they may use THIS system is this application's decision |
+
+### 8.5 Accounts are not created automatically
+
+An Entra identity with no matching account here is **refused**, and the attempt is logged. Every
+other part of the application assumes an administrator decided who may do what.
+
+So before switching on, check that each person who needs access has an account with a role. The
+first SSO sign-in stamps `users.entra_object_id` on the matching record — matched on the object id
+first and the email second — and after that the email can change without breaking the link.
+
+> **Why match on the object id and not the email alone.** Emails change: on marriage, on a
+> department rename, on a tenant migration. The object id is immutable and never recycled. Matching
+> on email alone would, in the worst case, attach a new person's sign-in to a departing employee's
+> record and hand them that person's approvals.
+
+---
+
+## 9. Operating without a shell
 
 | Task | How |
 |---|---|
@@ -366,7 +438,7 @@ told anything.
 
 ---
 
-## 9. When something is wrong
+## 10. When something is wrong
 
 | Symptom | First thing to check |
 |---|---|
@@ -382,7 +454,7 @@ told anything.
 
 ---
 
-## 10. Go-live checklist
+## 11. Go-live checklist
 
 - [ ] `itrequest:deploy-check` reports **0 failures**
 - [ ] Every warning read, and each one either fixed or knowingly accepted
@@ -397,3 +469,5 @@ told anything.
 - [ ] One real request raised, approved, consolidated and closed end to end
 - [ ] The audit trail for that request is complete — every transition, with actor and timestamp
 - [ ] Email proven, then `ITREQUEST_MAIL_ENABLED=true`
+- [ ] **Every person who needs access has an account with a role** — checked before SSO is switched on, because SSO does not create accounts
+- [ ] If SSO is to be used: app registration complete, and **one real sign-in through Microsoft** — not merely the settings filled in

@@ -3,6 +3,8 @@
 namespace App\Http\Requests;
 
 use App\Enums\BusinessPlanStatus;
+use App\Models\TierFieldRule;
+use App\Services\TierFieldRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -88,28 +90,169 @@ class ItRequestFormRequest extends FormRequest
     /**
      * The complete rule set for a fully submitted request.
      *
+     * The tier-conditional rules are merged in here rather than written into the steps, because
+     * they apply to fields in three different steps (BR-003) and reading them from one place is
+     * what keeps the step slices and the final check from disagreeing.
+     *
      * @return array<string, mixed>
      */
     public function rules(): array
     {
-        return array_merge(
-            ...array_values($this->steps()),
-        );
+        /*
+         * Two statements rather than one, because PHP forbids a positional argument after a
+         * spread — `array_merge(...$steps, $tierRules)` is a parse error.
+         *
+         * `steps()` already folds the tier rules into the step they belong to, so this exists to
+         * cover a field whose step could not be determined. `TierFieldRules::stepFor()` returns a
+         * step for every governed field, so in practice the second merge adds nothing; it is
+         * here so that a future field added to the governed list without a step is still
+         * VALIDATED rather than silently ignored. A rule that governs nothing is the failure
+         * this whole feature exists to avoid.
+         */
+        $all = array_merge(...array_values($this->steps()));
+
+        return array_merge($all, $this->tierRules());
+    }
+
+    /**
+     * Rules derived from the tier, for whichever tier is selected (BR-003).
+     *
+     * NO TIER SELECTED MEANS NO ADDITIONAL RULES.
+     *
+     * Tier is proposed, not required, and a draft may not have one yet. Treating "no tier" as
+     * "the strictest tier" would refuse a first step somebody has not finished filling in; the
+     * requirement is settled at submission, where a tier is present.
+     *
+     * @return array<string, mixed>
+     */
+    private function tierRules(): array
+    {
+        $tierId = $this->value('proposed_tier_id');
+
+        if (blank($tierId)) {
+            return [];
+        }
+
+        $rules = app(TierFieldRules::class);
+
+        $effective = $rules->forTier((int) $tierId);
+        $out = [];
+
+        foreach ($effective as $field => $requirement) {
+            /*
+             * A field the workflow itself decides is skipped entirely.
+             *
+             * Tier rules are merged OVER the step rules, so a tier emitting `nullable` for
+             * `business_plan_reference` would REPLACE the `requiredIf` that the business-plan
+             * branch depends on — and a request could then claim plan alignment with no plan
+             * cited. The governing list no longer offers those fields, and this is the second
+             * guard, so a future edit to that list cannot reopen the hole.
+             */
+            if (! $rules->mayRelax($field)) {
+                continue;
+            }
+
+            $constraints = $this->baseLengthRule($field);
+
+            if ($requirement === TierFieldRule::REQUIRED) {
+                /*
+                 * `required` here, not `requiredIf`.
+                 *
+                 * The governing rule has already decided — the administrator set this field
+                 * required for this tier — so the condition is the tier, and the tier was
+                 * checked once above. Making it conditional again would mean two places
+                 * deciding, which is how the two come to disagree.
+                 *
+                 * A tier may ADD a requirement freely. It cannot remove one: see `mayRelax()`,
+                 * consulted where the business-plan branch is written, not here.
+                 */
+                $out[$field] = array_merge(['required'], $constraints);
+
+                continue;
+            }
+
+            if ($requirement === TierFieldRule::HIDDEN) {
+                /*
+                 * A hidden field accepts nothing.
+                 *
+                 * Not `nullable` — which would let a stale value through and store a budget
+                 * amount on a tier where budget does not apply. The wizard clears the field when
+                 * the tier changes, so this only fires if that failed or if the payload was
+                 * crafted; either way the honest answer is to refuse it.
+                 *
+                 * Combined with 'nullable' rather than replacing it, so the message is "must be
+                 * absent" rather than a type error on a value that should never have arrived.
+                 */
+                $out[$field] = ['nullable', 'prohibited'];
+
+                continue;
+            }
+
+            // Optional: the format constraints still apply, and a blank is accepted.
+            if ($constraints !== []) {
+                $out[$field] = array_merge(['nullable'], $constraints);
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Length and format constraints that apply whatever the tier says.
+     *
+     * Kept separate from `required`/`nullable`, because a tier changes WHETHER a field must be
+     * filled and never what a valid value looks like — a 5,000-character limit is not a
+     * consequence of governance tier, and letting a tier change it would be a surprise.
+     *
+     * @return array<int, string>
+     */
+    private function baseLengthRule(string $field): array
+    {
+        return match ($field) {
+            'business_plan_reference' => ['string', 'max:255'],
+            'adhoc_justification' => ['string', 'min:30', 'max:5000'],
+            'value_proposition' => ['string', 'max:5000'],
+            'budget_amount' => ['numeric', 'min:0', 'max:9999999999.99'],
+            'budget_source', 'budget_code', 'funding_type' => ['string', 'max:100'],
+            'proposed_start_date', 'target_completion_date' => ['date'],
+            'forecast_resources', 'risk_summary', 'mitigation_plan',
+            'dependencies_constraints', 'in_scope', 'out_of_scope' => ['string', 'max:5000'],
+            default => [],
+        };
     }
 
     /**
      * The rules for each wizard step, keyed by step number.
      *
+     * TIER RULES ARE FOLDED INTO THE STEP THEY BELONG TO.
+     *
+     * They have to be, or a tier-required field in step 3 would pass step 3's check and fail the
+     * final one — and the requestor would be told at the end that a field three screens back is
+     * missing, with nothing saying which screen. `TierFieldRules::stepFor()` is what says where
+     * each field lives, so the two cannot disagree about that either.
+     *
      * @return array<int, array<string, mixed>>
      */
     public function steps(): array
     {
-        return [
+        $tierRules = $this->tierRules();
+
+        $steps = [
             1 => $this->stepOne(),
             2 => $this->stepTwo(),
             3 => $this->stepThree(),
             4 => $this->stepFour(),
         ];
+
+        foreach ($tierRules as $field => $rule) {
+            $step = TierFieldRules::stepFor($field);
+
+            if ($step !== null && isset($steps[$step])) {
+                $steps[$step][$field] = $rule;
+            }
+        }
+
+        return $steps;
     }
 
     /** Step 1 — Request information. */

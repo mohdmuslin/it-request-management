@@ -46,8 +46,8 @@ is not *how many requirements are green* but *which specific things still have t
 
 | ID | Requirement | Status | Where / note |
 |---|---|---|---|
-| FR-001 | Sign in using approved enterprise identity and SSO | 🟡 | Local email + password only. **No `IdentityProvider` interface exists** — the config array and the `entra_object_id` column do, and nothing reads either. See D-10 |
-| FR-002 | Retrieve or maintain requestor department, division and reporting data | 🟡 | Department and division default from the signed-in user's own record and are editable. **Not from an identity provider** — there is no profile retrieval. Names are resolved live, so renaming a department changes how historical requests read |
+| FR-001 | Sign in using approved enterprise identity and SSO | 🟡 | `IdentityProvider` contract with `LocalProvider` (default) and a complete `EntraProvider`. **The driver is a config value** — `ITREQUEST_IDENTITY_DRIVER`. Entra is code-complete but **not yet run against a tenant**; the app registration is pending. See D-10 |
+| FR-002 | Retrieve or maintain requestor department, division and reporting data | 🟡 | Department and division default from the signed-in user's own record and are editable. `IdentityProvider::profileFor()` returns a `UserProfile` value object, so an external provider can supply them from claims without the caller changing. **The Entra implementation of that lookup is unrun.** Names are resolved live, so renaming a department changes how historical requests read |
 | FR-003 | Save incomplete requests as drafts | ✅ | `Draft` state and an explicit **Save draft** at every step. **Autosave is not implemented** — see D-9. `interface.md` §4 |
 | FR-004 | Validate mandatory and conditional fields before submission | ✅ | FormRequest + Livewire rules; the business-plan conditional block. `interface.md` §4 |
 | FR-005 | Unique configurable request number | ✅ | Generated on submit, immutable. `database-design.md` §5 |
@@ -87,7 +87,7 @@ is not *how many requirements are green* but *which specific things still have t
 |---|---|---|---|
 | BR-001 | Submitted requests not deletable by ordinary users | ✅ | Policy; `Withdrawn` is a status, not a deletion |
 | BR-002 | A rejection or return requires comments | ✅ | Enforced in `WorkflowDecisionService::assertDecisionIsAllowed()`, **not at the database** — `approval_tasks.comments` is nullable. The service is the only way a decision is recorded, so the rule holds, but a direct insert would not be refused |
-| BR-003 | Conditional documents and fields driven by tier and classification | 🟡 | A conditional block exists, but it is driven by **business-plan status** and **urgency** — neither is a tier or a classification. `classification_review_units` decides *who reviews*, which is routing, not field conditionalism. **No field is conditional on tier or classification** |
+| BR-003 | Conditional documents and fields driven by tier and classification | 🟡 | **Fields: done.** A tier makes any governed field required, optional or hidden, and the rule is data an administrator edits (`tier_field_rules`, the **Tier field rules** screen) rather than code. Conditions routed by business-plan status and urgency remain. **Documents are not built — D-7**, and classification drives who reviews rather than which fields apply |
 | BR-004 | The approver cannot modify the requestor's justification | ✅ | The approval action writes `approval_tasks` only |
 | BR-005 | Recommendations versioned or preserved, never overwritten | ✅ | `version_no` inserts a new row |
 | BR-006 | Closure requires all mandatory decisions and documentation | 🟡 | **Decisions enforced; documentation not.** See D-7 |
@@ -103,7 +103,7 @@ is not *how many requirements are green* but *which specific things still have t
 | ID | Scenario | Status | Note |
 |---|---|---|---|
 | UAT-001 | Requestor saves and resumes a draft | ✅ | |
-| UAT-002 | Mandatory and conditional validation prevents incomplete submission | 🟡 | Conditional **fields** enforced; conditional **documents** cannot be — D-7 |
+| UAT-002 | Mandatory and conditional validation prevents incomplete submission | 🟡 | Field validation is enforced, including **tier-driven requirements**. Conditional **documents** cannot be — D-7 |
 | UAT-003 | Unique request number generated without duplication | ✅ | |
 | UAT-004 | Project Owner approves and the workflow advances | ✅ | |
 | UAT-005 | Project Sponsor rejects with mandatory comments | ✅ | |
@@ -141,14 +141,14 @@ discovered.
 
 | ID | What | Severity |
 |---|---|---|
-| **D-10** | The identity provider interface was never written — **and is documented as if it were** | **Highest** |
-| D-7 | Document upload not built; closure does not check for documentation | High |
+| **D-7** | Document upload not built; closure does not check for documentation | **High** |
+| **D-10** | Entra SSO code-complete but never run against a tenant | Medium — configuration |
 | D-8 | Two role landing pages are placeholders | Medium |
 | D-9 | Autosave and editable templates not built | Low |
 
-D-10 is listed first because it is the only one where the documentation asserts something false
-rather than omitting something true. An absence is found by looking; a false description is found
-only by checking.
+**D-7 is now the highest, because it is the only one where the application accepts a request it
+should refuse.** D-10 is a decision plus an hour of provisioning, and the code no longer blocks on
+it — which was the point of making the driver configurable.
 
 ### D-1 — Entra ID SSO deferred
 
@@ -244,26 +244,25 @@ only by checking.
 | **Consequence** | A requestor who closes the tab without pressing **Save draft** loses what they typed. Nothing else depends on either gap |
 | **Production plan** | Autosave is a small addition to a component that already has the save path. Templates need the final wording first, which is a business input |
 
-### D-10 — The identity provider interface was never written
+### D-10 — Entra ID has never been run against a tenant
 
-This is the most serious entry here, because unlike the others it is **documented as existing in
-four places** and none of them is code.
+D-10 previously recorded that the identity provider interface had been documented as built and was
+not. It has since been built. What remains open is the part no amount of code can close.
 
 | | |
 |---|---|
 | **Brief requires** | FR-001 — sign in using approved enterprise identity and SSO |
-| **The documentation claims** | `architecture.md` §4 lists `app/Contracts/` containing `IdentityProvider`. §6 shows the interface as a PHP code block and a driver table naming `LocalProvider` for the POC and `EntraProvider` for production. D-1 of this matrix, and `docs/architecture.md` §6 again, both list the production plan as *"implement `EntraProvider`; swap the config binding"* |
-| **What actually exists** | **No `app/Contracts/` directory. No `IdentityProvider`, `LocalProvider` or `EntraProvider` — not as an interface, a stub, or a comment.** `Auth\Login` calls `Auth::attempt(['email' => …, 'password' => …])` directly |
-| **The only real artefact** | An `identity` array in `config/itrequest.php` with a `driver` key and four `entra.*` keys. **Nothing reads any of it.** `ITREQUEST_IDENTITY_DRIVER` appears in no PHP file in the application |
-| **Why this is worse than the other gaps** | D-7 to D-9 are absences. This is a **false description of the architecture**, written in the present tense, in the document a new developer reads first. Someone implementing Entra would search for `LocalProvider`, find nothing, and reasonably conclude the repository was incomplete — or would wire OIDC into `Login.php` and leave the config array still unread |
-| **Consequence for the brief** | D-1 says Entra is *deferred*. More precisely: **neither the SSO nor the seam for it was built.** The POC authenticates locally and that is the whole of it |
-| **What is genuinely reusable** | `users.entra_object_id` (char 36, nullable, unique) is in the first migration. That part of D-1's mitigation is true |
-| **Production plan** | Write the interface, `LocalProvider` binding the existing `Auth::attempt` call, and the config binding to select between drivers. Then `EntraProvider`. The estimate in `project-plan.md` §7 *includes* this work, so no estimate changes — the plan was always to build it, and the documentation simply described it as already built |
+| **Now built** | `App\Contracts\IdentityProvider` with `LocalProvider` and `EntraProvider`; `IdentityManager` resolves the configured driver and reports why one is unusable; bound in `AppServiceProvider`; the sign-in screen and the SSO routes follow the configuration |
+| **The Entra flow is complete** | Authorisation-code exchange, id_token signature verified against the tenant's published JWKS with `alg` pinned to RS256, and `iss`, `aud`, `exp` and `nonce` each checked. State and nonce are held server-side in the session, not merely echoed in the URL |
+| **What is NOT proven** | **No network interaction with Microsoft has been executed.** There is no app registration, so no token has been returned and validated. Everything the test suite covers is exercised against a faked HTTP client — URL construction, configuration validation, state and nonce handling, signature rejection, and account matching. **Whether Microsoft accepts the request and whether a real token validates are unverified** |
+| **Why this is stated rather than glossed** | "We wrote an SSO integration" and "we have signed in through SSO" are different claims. This matrix twice reported the identity requirement as met on the strength of a design document, and the correction is worth more than the code |
+| **Also unproven** | The Graph profile lookup (FR-002's department and manager from claims). It returns the stored record when Graph is unreachable, so a failure degrades rather than breaks |
+| **Consequence** | Local sign-in works and is the default. Setting `ITREQUEST_IDENTITY_DRIVER=entra` with no app registration shows a warning on the sign-in screen and falls back to local accounts — deliberately, so a pending decision cannot lock everybody out, and visibly, so nobody concludes SSO is live |
+| **What remains** | An app registration with the redirect URI `https://itrequest.mwstay.com/auth/callback` registered exactly, tenant admin consent, and one real sign-in. Then the four `ENTRA_*` values |
+| **Effort** | An hour of configuration, not a development task |
 
-> **The correction matters more than the code.** The code is a small, well-understood addition
-> that the work estimate already covers. The documentation was asserting an architecture that
-> does not exist, and that is the kind of error that survives every test suite because no test
-> reads a design document.
+> **The decision is outstanding, and the code no longer blocks on it.** That was the request:
+> make it configurable so the answer next week is a setting rather than a change.
 
 ---
 

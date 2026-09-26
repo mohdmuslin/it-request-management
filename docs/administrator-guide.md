@@ -20,6 +20,7 @@ case it does not cover.
 | People | **Users and roles** | An account with no role can sign in and do nothing |
 | Vocabulary | **Reference data** | Tiers, classifications and routes stop matching how the organisation works |
 | Time | **Due dates and calendar** | Due dates land on public holidays, and every target drifts |
+| **What each tier demands** | **Tier field rules** | A Tier 2 request is filed with no budget, because nothing required one |
 | Evidence | **Audit log** | Nobody can answer "who changed this?" |
 
 The **Reports** screen is *not* on this list. Reports belong to management, and an
@@ -47,6 +48,25 @@ land on the Dashboard, that is correct. If you are a Technical Reviewer and you 
 Dashboard, you are probably missing the Technical Reviewer role — ask another administrator
 to check your account.
 
+### Where you sign in depends on the configuration
+
+Two things can appear on the sign-in screen, and which one appears is set by whoever configured the
+application, not by you:
+
+| What you see | What it means |
+|---|---|
+| **Email and password** | The application holds the accounts. This is the default |
+| **Sign in with your organisation account** | Sign-in goes through Microsoft. You are taken there and returned |
+
+If you see a **warning that single sign-on is selected but not configured**, sign-in is still
+working by password while somebody finishes the setup. It is shown deliberately rather than hidden:
+a system that quietly falls back looks like it has SSO when it does not, and nobody finishes the
+job. The warning names the missing setting.
+
+> **Nobody can reset a password by email.** There is no mail server configured to send a reset
+> link, and accounts are created by an administrator rather than self-registered. The section
+> below covers what to do instead.
+
 ### If you cannot sign in at all
 
 Nobody can reset a password from the sign-in screen: there is no mail server configured to
@@ -67,11 +87,22 @@ it by re-uploading `app/Console/Commands/SetPassword.php` from the repository.
 > outlives its purpose. The step that gets skipped on a busy morning is the one where
 > somebody remembers to remove it, so the command does it for you.
 
+### Adding an account when the screen is unreachable
+
+**Administration → Users and roles** is behind a sign-in, so it cannot help when nobody can sign in.
+For that there is a command, run the same way as the one above:
+
+```
+php /home/{account}/itrequest.mwstay.com/artisan itrequest:make-user someone@example.com --role=requestor
+```
+
+It prints a generated password once and writes it to the log. `--role` is repeatable. A role name
+that is misspelled **fails** rather than creating an account with no role — the failure you would
+otherwise find days later, from the person who cannot do their job.
+
 ---
 
 ## 3. Users and roles
-
-**Administration → Users and roles**
 
 ### The principle behind this screen
 
@@ -241,7 +272,73 @@ why a deadline fell on a public holiday.
 
 ---
 
-## 6. The audit log
+## 6. Tier field rules
+
+**Administration → Tier field rules**
+
+This is where the system's answer to *"what does this tier require?"* lives. For every field and
+every tier you set one of three states:
+
+| State | What it means |
+|---|---|
+| **Required** | The request cannot be submitted without it |
+| **Optional** | Accepted, and may be left blank. **This is the default** — a field with no rule is optional |
+| **Hidden** | Does not apply to this tier. The field is not shown, and **any value already in it is cleared** when the tier is chosen |
+
+**Every tier** is the fallback column. A tier's own setting beats it, so the usual shape is one
+rule in the fallback and an exception in a tier — rather than three identical rules.
+
+### Why hiding clears the field
+
+If a field the tier does not use kept its value, validation would refuse the request with an error
+pointing at a field the requestor can no longer see. Invisible *and* blocking is the worst of both,
+so the value is cleared and a message names what went.
+
+That message is the only warning somebody gets that their typing has gone. It is worth telling
+people about: switching the tier near the end of a long form can discard work.
+
+### What cannot be ruled on
+
+These are always required, and are not on the screen because a rule could break the workflow: the
+title, department, project owner, business need, impact if not implemented, and urgency.
+
+**Business plan reference** and **ad-hoc justification** are also not on the screen, for a
+different reason: they are governed by whether the request claims alignment with an approved plan,
+not by tier. They are a pair — one or the other is required, and which one depends on an answer
+earlier in the form. A tier rule that made one optional would let a request through claiming plan
+alignment with no plan cited and no reason given.
+
+### The starting position
+
+The brief requires fields to be driven by tier but does not say which field for which tier — that
+is a business decision. What ships is a first draft, chosen to be visible rather than neutral so
+it is easy to disagree with:
+
+| Tier | What it demands |
+|---|---|
+| **Tier 1** | Nothing extra. A small, well-understood request should not need a cost code to be filed — demanding one produces a zero rather than an honest blank |
+| **Tier 2** | Budget amount, budget source and resources required. A request of this size is approved against a cost |
+| **Tier P (Partnership)** | Budget amount and budget code required; **dependencies and constraints hidden**, because a partnership with another organisation is governed by the agreement rather than by an internal dependency list |
+
+**Change these to match how the organisation actually works.** They are the system's opinion about
+governance, and an administrator's is better.
+
+### It takes effect immediately, and it is not retroactive
+
+A saved rule applies to the **next request saved**, including one already open in a form. It does
+not change requests already submitted — those were judged against the rules in force when they
+were filed, which is what makes the audit trail meaningful.
+
+### The seeder will not overwrite you
+
+Changing the rules affects future deployments only in the sense that nothing changes: the seeder
+creates a rule that is missing and **never updates one that exists**. If it updated, it would
+silently revert a change on the next release, and the change would reappear days later with nobody
+connecting it to a deploy.
+
+---
+
+## 7. The audit log
 
 **Administration → Audit log** — also the landing screen for the Auditor role.
 
@@ -261,7 +358,7 @@ audit log is what settles it, because it holds the values before and after.
 
 ---
 
-## 7. The two things that lock everybody out
+## 8. The two things that lock everybody out
 
 An administrator's mistakes are different in kind from everybody else's, because they affect
 everyone. Two are worth naming.
@@ -286,7 +383,7 @@ or wrong, restore it from the backup of `.env`, do not generate a new one.
 
 ---
 
-## 8. Routine tasks
+## 9. Routine tasks
 
 | When | Do |
 |---|---|
@@ -296,12 +393,13 @@ or wrong, restore it from the backup of `.env`, do not generate a new one.
 | Roles change | Edit the account. Role changes are timestamped in the audit trail |
 | Before a public holiday | Add it to the calendar |
 | Targets change | Update the grid. Existing tasks keep their old targets — say so when you announce it |
+| **What a tier requires changes** | Update **Tier field rules**. Existing requests are unaffected — say so when you announce it |
 | A new tier or classification is needed | Add it in Reference data. Check the routing rule still says what you mean |
 | Audit requested | The Audit log screen, filtered to the period in question |
 
 ---
 
-## 9. When something looks wrong
+## 10. When something looks wrong
 
 | Symptom | Likely cause | Check |
 |---|---|---|
@@ -310,11 +408,13 @@ or wrong, restore it from the backup of `.env`, do not generate a new one.
 | A user cannot sign in | Account deactivated | Users and roles — the row is greyed and marked **Deactivated** |
 | A due date looks a day out | A public holiday is missing from the calendar | Due dates and calendar |
 | A request will not close | It is waiting on a decision | Open the request. The Close panel **names** the outstanding items rather than saying "cannot close" |
+| **A field is missing from the form** | The tier hides it | **Tier field rules**. The form names the hidden fields above the gap, so an empty space is not read as a broken screen |
+| **A request will not submit over a field nobody can see** | A rule change hid a field while somebody had it open | Reload the form. A hidden field's value is cleared when the tier changes, but a rule changed mid-session is only picked up on the next save |
 | Nobody received an email | Email is not configured on this host | See `deployment.md` §7. Notifications are recorded and will send once it is |
 
 ---
 
-## 10. What this guide deliberately does not cover
+## 11. What this guide deliberately does not cover
 
 | Topic | Where it is instead |
 |---|---|

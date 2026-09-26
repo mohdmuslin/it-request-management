@@ -117,6 +117,14 @@ class Navigation extends Component
                     $this->item('Due dates and calendar', 'admin.settings.index', 'calendar',
                         $user->isAdministrator()),
 
+                    /*
+                     * Tier field rules sit beside the calendar deliberately: both answer "what
+                     * does the process demand of this request?", and an administrator changing
+                     * one is usually about to consider the other.
+                     */
+                    $this->item('Tier field rules', 'admin.tier-rules.index', 'adjustments',
+                        $user->isAdministrator()),
+
                     $this->item('Users and roles', 'admin.users.index', 'user-group',
                         $user->isAdministrator()),
 

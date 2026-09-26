@@ -88,42 +88,44 @@ that.
 | Application | Use cases, orchestration, authorisation | `app/Services/`, `app/Actions/` |
 | Domain | The rules: requests, approvals, recommendations, routing, state machine | `app/Enums/`, `app/Services/WorkflowService.php` |
 | Persistence | Models, transactions, migrations | `app/Models/`, `database/migrations/` |
-| Integration | Identity, mail, storage | `app/Contracts/`, `app/Services/` |
+| Integration | Identity, mail, storage | `app/Contracts/`, `app/Identity/`, `app/Services/` |
 | Operations | Deployment, configuration, cron, logging, backup | `.github/workflows/`, `routes/console.php` |
 
 ### Directory layout
 
 ```
 app/
-  Actions/            single-purpose write operations
-  Console/Commands/   InstallApplication, SendDueReminders, RecomputeDueDates
-  Contracts/          (NOT BUILT) IdentityProvider, HolidaySource
+  Actions/            (NOT BUILT) single-purpose write operations
+  Console/Commands/   InstallApplication, SetPassword, MakeUser, RunDeployment,
+                      DeployCheck, SendApprovalNotifications, TestMail, UatRunThrough
+  Contracts/          IdentityProvider, UserProfile
   Enums/              RequestStatus, WorkflowStage, Tier, Classification, GovernanceRoute, Decision
+  Exceptions/         IdentityNotConfiguredException
   Http/
     Controllers/      thin; most screens are Livewire components
-    Middleware/       EnsureUserIsActive, ForceJsonResponse
+    Middleware/       (NOT BUILT) EnsureUserIsActive, ForceJsonResponse
     Requests/         FormRequests, one per write action
+  Identity/           LocalProvider, EntraProvider
   Livewire/           page components and forms
   Models/             one per table
-  Policies/           RequestPolicy, ApprovalPolicy, RecommendationPolicy
-  Services/           WorkflowService, ApprovalService, RecommendationService,
-                      ConsolidationService, AuditService, BusinessCalendar,
-                      NotificationService, ReferenceDataService
-  Support/            ApiResponse (for any future API)
+  Policies/           ItRequestPolicy
+  Services/           WorkflowService, WorkflowDecisionService, GovernanceService,
+                      AuditService, BusinessCalendar, NotificationService,
+                      ReportingService, RequestNumberService, IdentityManager,
+                      TierFieldRules
+  Support/            (NOT BUILT) ApiResponse for any future API
 ```
 
-> **This tree is the intended layout, not a directory listing.** Verified against the
-> repository: `Actions/`, `Contracts/`, `Http/Middleware/` and `Support/` **do not exist** — the
-> middleware and the API support class were planned and never written, and `Contracts/` is the
-> subject of `compliance-matrix.md` D-10. Four of the eight services named above do not exist
-> either (`ApprovalService`, `RecommendationService`, `ConsolidationService`,
-> `ReferenceDataService`); the governance work went into one `GovernanceService` instead, and
-> `ReportingService`, `RequestNumberService` and `WorkflowDecisionService` were added later.
+> **Verified against the repository at the time of writing, not planned.** Four entries are
+> marked NOT BUILT because they do not exist: `Actions/`, `Http/Middleware/` and `Support/` were
+> planned and never written, and four services once named here (`ApprovalService`,
+> `RecommendationService`, `ConsolidationService`, `ReferenceDataService`) were folded into
+> `GovernanceService` and the Livewire components instead.
 >
-> **`app/` in the repository is the authority, not this tree.** This section was corrected after
-> a compliance review found it being cited as evidence that an identity interface existed. A
-> design document describes what should be built; reading one as a description of what *was*
-> built is exactly how that happened.
+> **`app/` in the repository is the authority, not this tree.** This section was corrected after a
+> compliance review found it being cited as evidence that an identity interface existed when it
+> did not. A design document describes what should be built; reading one as a description of what
+> *was* built is exactly how that happened.
 
 ---
 
@@ -198,27 +200,31 @@ re-send. Without that, an hourly reminder job becomes an hourly spam job.
 The brief requires Entra ID via OIDC/OAuth 2.0. The organisation demonstrably has it — the
 existing SharePoint forms read department and division directly from Microsoft profiles.
 
-> **As built, the POC uses local login and nothing else.** `Auth\Login` calls `Auth::attempt()`
-> against `users.email` and `users.password`. **The interface below was never written** — it
-> describes the intended design. This section previously stated "the POC uses local login,
-> **behind an interface**", which was not true and is the single error a compliance review found
-> hardest to catch, because it read as an architectural fact in the document a new developer
-> opens first. See `compliance-matrix.md` D-10.
-
-The intended shape — **to be built**, not a description of the code:
+**Built.** `App\Contracts\IdentityProvider` is the seam, and which implementation runs is a
+config value rather than a code change:
 
 ```php
 interface IdentityProvider
 {
-    public function authenticate(string $email, string $secret): ?Authenticatable;
-    public function profileFor(string $identifier): UserProfile;   // department, division, manager
+    public function driver(): string;
+    public function isConfigured(): bool;
+    public function configurationProblem(): ?string;   // in words an administrator can act on
+    public function requiresRedirect(): bool;
+    public function authenticate(string $email, string $secret): ?User;
+    public function redirectUrl(): string;
+    public function userFromCallback(array $parameters): ?User;
+    public function profileFor(User $user): UserProfile;
 }
 ```
 
 | Driver | Status |
 |---|---|
-| `LocalProvider` | **Not built.** The POC logs in through `Auth::attempt()` in `Auth\Login` |
-| `EntraProvider` | **Not built.** Deferred — see `compliance-matrix.md` D-1 and D-10 |
+| `LocalProvider` | **Built and in use.** Holds the `Auth::attempt()` call the login component used to make directly. Checks credentials and nothing else — account state is the caller's job, so both drivers enforce it identically |
+| `EntraProvider` | **Code-complete, never run against a tenant.** Authorisation-code exchange, id_token signature verified against the tenant's JWKS with `alg` pinned to RS256, and `iss`, `aud`, `exp` and `nonce` each checked. See `compliance-matrix.md` D-10 for what is unproven and why |
+
+Selection: `ITREQUEST_IDENTITY_DRIVER=local|entra`. `IdentityManager` resolves it and can report
+**why** a driver is unusable, which a bare container binding cannot — the sign-in screen shows that
+reason, and falls back to local accounts so a pending app registration cannot lock everybody out.
 
 > **`users.entra_object_id` is in the first migration.** Adding it after users exist means
 > matching rows to Entra identities by email — which fails for anyone whose email has changed,
@@ -226,7 +232,10 @@ interface IdentityProvider
 > later.
 
 **Profile auto-fill.** Department and division are populated from the identity provider when a
-request is created, and governance may correct them. Correcting a *request* snapshot is not the
+request is created, and governance may correct them. `profileFor()` returns a `UserProfile` value
+object rather than writing to `User`: an identity provider reports what it knows, and the
+application decides whether to trust it — a provider that wrote directly would make a claim
+indistinguishable from an administrator's correction. Correcting a *request* snapshot is not the
 same as correcting a *user* record — see `database-design.md` §5.
 
 ---
