@@ -71,6 +71,53 @@ To arm it: GitHub → Settings → Secrets and variables → Actions → **Varia
 > is what protects `.env`, `storage/**` and the vendor directory — **read it before
 > changing it**, because removing a line from it deletes that thing from the server.
 
+> **The repository URL in `FTP_SERVER` is a host, not a path.** `ftp.mwstay.com`, not
+> `ftp.mwstay.com/itrequest`. The directory is decided by the FTP account's own root and by
+> `server-dir`, so a path here usually produces a login that succeeds and an upload that
+> lands in the wrong place.
+
+### 3.1a Extract `vendor.zip` — REQUIRED, and easy to forget
+
+**The deploy uploads `vendor/` as a single archive and never extracts it.** There is no shell
+on this host and no cPanel Terminal, so nothing on the server can run `unzip`.
+
+cPanel → **File Manager** → the application directory → right-click `vendor.zip` →
+**Extract** → into the application root.
+
+The archive contains the `vendor` folder itself, so extracting in place puts the files exactly
+where they belong. **Leave `vendor.zip` on the server afterwards** — deleting it makes the next
+deployment re-upload it from scratch.
+
+> **Nothing works until this is done, and the failure is silent.** `public/index.php` requires
+> `vendor/autoload.php` on its first line, so a server with no `vendor/` answers **500 with a
+> zero-length body** — PHP died before Laravel started, which means nothing was written to
+> `storage/logs` either. An empty log and no response body looks like a host problem, and the
+> actual cause is one unextracted archive.
+>
+> This is also why the workflow now asserts that `vendor.zip` is not in the exclude list: it is
+> the only thing carrying the dependencies to the server, and a mistake there produces exactly
+> that silent 500.
+
+### 3.1b After any dependency change
+
+`composer.lock` changing means each deploy replaces `vendor.zip` with a new one — **but the
+`vendor/` directory on the server still holds the OLD packages**, because the archive is not
+extracted automatically.
+
+So after a release that changed dependencies:
+
+1. cPanel → File Manager → **delete the existing `vendor/` folder**
+2. right-click the new `vendor.zip` → **Extract**
+
+> **Delete first, or you get a mixture.** Extracting over an existing `vendor/` merges rather
+> than replaces, so a package that was REMOVED in the new lock file stays on disk. The
+> application then behaves as though a package is installed that the lock file says is gone —
+> and `composer install` on a runner would never reproduce it.
+>
+> **How to know if a release changed dependencies:** the workflow prints
+> `vendor.zip: N entries` in the "Package vendor" step. A jump in that number between two
+> releases means the archive changed.
+
 ### 3.2 Create `.env`
 
 `.env` is never uploaded — it holds the database password and `APP_KEY`, and it exists
@@ -442,6 +489,7 @@ first and the email second — and after that the email can change without break
 
 | Symptom | First thing to check |
 |---|---|
+| **500 with a ZERO-LENGTH body, and an empty log** | **`vendor/` is missing — `vendor.zip` has not been extracted.** `public/index.php` requires `vendor/autoload.php` on its first line, so PHP dies before Laravel starts and nothing is written to the log. See §3.1a. Run `itrequest:deploy-check`, which names this |
 | **500 on every page** | The storage tree. A fresh FTP-deployed Laravel has no `storage/framework/views` |
 | **500, and the log is empty** | `storage/logs` may not exist, so the error cannot be written. An empty log is **not** "nothing is wrong" |
 | **403 on every page** | `public/index.php` is missing, or the document root is wrong |
@@ -456,6 +504,17 @@ first and the email second — and after that the email can change without break
 
 ## 11. Go-live checklist
 
+**Upload and unpack**
+
+- [ ] Secrets set in GitHub: `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`
+- [ ] Variable set: `FTP_DEPLOY_ENABLED` = `true` (until then every deploy is a **dry run**)
+- [ ] The FTP login verified locally with `scripts\ftp-login-check.ps1`, which also confirms the account lands in the **application root** rather than one level above it
+- [ ] A deploy has run to completion with the FTP step green
+- [ ] **`vendor.zip` extracted** in the application root (§3.1a) — `vendor/autoload.php` exists and is readable
+- [ ] `.env` created in the **application root**, not `public/`
+
+**Application**
+
 - [ ] `itrequest:deploy-check` reports **0 failures**
 - [ ] Every warning read, and each one either fixed or knowingly accepted
 - [ ] The first administrator's password changed, and the log entry removed
@@ -463,10 +522,19 @@ first and the email second — and after that the email can change without break
 - [ ] This year's public holidays added
 - [ ] Stage targets agreed with the business
 - [ ] Review units assigned to each classification
+- [ ] Tier budget bands confirmed against the agreed thresholds (Reference data → Tier)
+
+**Operations**
+
 - [ ] Scheduled jobs registered, and each one **confirmed to have fired** by reading its log
 - [ ] The one-off install and check cron jobs **deleted**
 - [ ] `APP_DEBUG=false`
-- [ ] One real request raised, approved, consolidated and closed end to end
+- [ ] `APP_ENV=production`, so the demo-account seeder stays disabled
+
+**Proof**
+
+- [ ] One real request raised, approved, consolidated and closed end to end — **with a document attached**, because closure requires one
+- [ ] That document opens through the Documents panel, which also proves the private disk is readable
 - [ ] The audit trail for that request is complete — every transition, with actor and timestamp
 - [ ] Email proven, then `ITREQUEST_MAIL_ENABLED=true`
 - [ ] **Every person who needs access has an account with a role** — checked before SSO is switched on, because SSO does not create accounts

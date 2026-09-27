@@ -147,6 +147,62 @@ jobs:
           echo "vendor.zip: $(du -h vendor.zip | cut -f1), $(unzip -l vendor.zip | tail -1 | awk '{print $2}') entries"
 
       # -----------------------------------------------------------------
+      # Assert the archive will actually SHIP.
+      #
+      # WHY THIS EXISTS, AND WHY IT IS NOT PARANOIA
+      #
+      # Every other check in this file runs on the RUNNER, where `vendor/` has just been
+      # installed — so they all pass whether or not anything delivers it to the server. The
+      # exclude list is the only thing that decides what travels, and it is a text block that
+      # nothing validated.
+      #
+      # It was wrong. `vendor.zip` was listed there alongside `**/vendor/**`, so the archive
+      # was built, verified, counted — and never uploaded. With `vendor/` also excluded, the
+      # server received no dependencies at all, and `public/index.php` requires
+      # `vendor/autoload.php` on its first line. The result would have been a 500 with an empty
+      # body and an empty log, from a workflow where every single step was green.
+      #
+      # THE CHECK IS A DELIBERATELY BLUNT `grep` RATHER THAN A PARSER.
+      #
+      # An earlier version extracted the exclude block with `awk` and matched inside it. It
+      # could not be run locally — `awk` is not on the development machine — so it was written
+      # blind and proved ineffective the first time it was tested against a bad list. A guard
+      # that cannot be exercised where it is written is not a guard.
+      #
+      # This matches the whole file instead. It is cruder and could in principle catch a
+      # mention of `vendor.zip` in prose rather than in the list, and that is the trade taken
+      # on purpose: the cost of a false positive is a red build with a clear message, and the
+      # cost of a false negative is a site that 500s while every step reports success.
+      #
+      # The `echo` lines below are the only place the string appears in a passing file, so
+      # they are excluded by matching only lines that begin with optional whitespace followed
+      # by `vendor.zip` — which is exactly how an exclude entry is written.
+      # -----------------------------------------------------------------
+      - name: Assert the vendor archive is not excluded
+        run: |
+          set -e
+
+          if [ ! -f vendor.zip ]; then
+            echo "::error::vendor.zip was not created — nothing would carry the dependencies to the server."
+            exit 1
+          fi
+
+          if grep -qE '^[[:space:]]*vendor\.zip[[:space:]]*$' .github/workflows/deploy.yml; then
+            echo "::error::vendor.zip is listed as an exclusion in deploy.yml. vendor/ is also excluded, so the server would receive NO dependencies and every page would 500 with an empty log. Remove that line."
+            exit 1
+          fi
+
+          entries=$(unzip -l vendor.zip | tail -1 | awk '{print $2}')
+          size=$(du -k vendor.zip | cut -f1)
+
+          if [ "$entries" -lt 100 ]; then
+            echo "::error::vendor.zip has only ${entries} entries — that is not a Composer install."
+            exit 1
+          fi
+
+          echo "vendor.zip will ship: ${entries} entries, ${size} kB."
+
+      # -----------------------------------------------------------------
       # Arm the post-deploy hook.
       #
       # There is no shell on the host, so the workflow cannot run the post-upload steps
@@ -250,6 +306,25 @@ jobs:
           #                       tender document attached to a request exists nowhere
           #                       else and no database backup contains it.
           #
+          #   vendor/**           a BUILD ARTIFACT, excluded so the `vendor/` directory
+          #                       UNPACKED ON THE SERVER IS LEFT ALONE. Excluded paths are
+          #                       skipped in BOTH directions, so without this line the
+          #                       reconciliation would see a vendor/ that is not in the
+          #                       local tree and DELETE it — taking the site down.
+          #
+          #                       `vendor.zip` IS NOT IN THIS LIST, AND MUST NOT BE.
+          #                       It was, and that made the deploy impossible: with vendor/
+          #                       excluded AND the archive excluded, NOTHING carried the
+          #                       dependencies to the server. `public/index.php` requires
+          #                       `vendor/autoload.php` on its first line, so the site would
+          #                       have answered 500 with an empty body and an empty log —
+          #                       every check in this file green, because they all run
+          #                       BEFORE the upload, on the runner, where vendor/ exists.
+          #
+          #                       The archive is the ONLY route by which dependencies reach
+          #                       the host. Excluding it is not an optimisation; it is a
+          #                       deploy that cannot work.
+          #
           # A NOTE ON THE STORAGE TREE. Excluding these paths means the empty directories
           # are not uploaded either, so a fresh server has no `storage/framework/views` —
           # and the application then dies with "View path not found", a message that names
@@ -271,7 +346,6 @@ jobs:
             **/storage/**
             **/.github/**
             **/*.md
-            vendor.zip
             phpunit.xml
             .editorconfig
             .gitattributes

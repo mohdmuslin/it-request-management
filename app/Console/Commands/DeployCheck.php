@@ -122,6 +122,34 @@ class DeployCheck extends Command
 
     private function checkStorage(): void
     {
+        /*
+         * The Composer autoloader, first — because without it NOTHING ELSE CAN RUN.
+         *
+         * `public/index.php` requires `vendor/autoload.php` on its first line, so a server whose
+         * `vendor/` is absent answers 500 with a ZERO-LENGTH body: PHP died before Laravel started,
+         * which also means nothing was written to `storage/logs`. An empty log and no response body
+         * reads like a host fault.
+         *
+         * The cause is almost always that `vendor.zip` has not been extracted. This host has no
+         * shell, so the deploy uploads the archive and extraction is a manual cPanel step — one
+         * that is easy to miss precisely because every check in the workflow passed on the runner,
+         * where `vendor/` exists.
+         *
+         * Checked by running the command at all, so this is a belt-and-braces assertion. It is here
+         * because the MESSAGE is what matters: `itrequest:deploy-check` is the thing an operator
+         * runs when the site is down, and it should name the unextracted archive rather than
+         * reporting on the database.
+         */
+        if (! is_file(base_path('vendor/autoload.php'))) {
+            $this->flagFail(
+                'vendor/autoload.php is missing. Extract vendor.zip in the application root '
+                .'(cPanel → File Manager → right-click vendor.zip → Extract). Until then every page '
+                .'returns 500 with an empty body and nothing is written to the log.'
+            );
+        } else {
+            $this->flagPass('Composer autoloader present.');
+        }
+
         foreach (['framework/views', 'framework/cache', 'logs'] as $directory) {
             if (! is_dir(storage_path($directory))) {
                 $this->flagFail("storage/{$directory} is missing. The application will fail with an error that does not name this.");
