@@ -30,15 +30,18 @@ be made and justified. Every ⚪ below has a reason and a production plan.
 
 | Group | ✅ | 🟡 | 🔵 | ⚪ | ⛔ | Total |
 |---|---|---|---|---|---|---|
-| Functional (FR-001…015) | 9 | 5 | — | — | 1 | **15** |
+| Functional (FR-001…015) | 9 | 6 | — | — | — | **15** |
 | Non-functional (NFR-001…010) | 4 | 3 | 1 | 2 | — | **10** |
-| Business rules (BR-001…010) | 7 | 3 | — | — | — | **10** |
-| Acceptance (UAT-001…015) | 12 | 2 | — | 1 | — | **15** |
-| **Total** | **32** | **13** | **1** | **3** | **1** | **50** |
+| Business rules (BR-001…010) | 8 | 2 | — | — | — | **10** |
+| Acceptance (UAT-001…015) | 13 | 1 | — | 1 | — | **15** |
+| **Total** | **34** | **12** | **1** | **3** | **—** | **50** |
 
-**Read the 🟡 count as the headline.** Thirteen of fifty rows are partial, and every one of them
-names what is missing rather than saying "mostly done" — because the useful question at handover
-is not *how many requirements are green* but *which specific things still have to happen*.
+**No requirement is now ⛔.** The one that was — document upload (FR-006) — is built, and with it
+BR-006's documentation clause, which had been a message with no check behind it.
+
+**Read the 🟡 count as the headline.** Twelve of fifty rows are partial, and every one names what is
+missing rather than saying "mostly done" — because the useful question at handover is not *how many
+requirements are green* but *which specific things still have to happen*.
 
 ---
 
@@ -51,7 +54,7 @@ is not *how many requirements are green* but *which specific things still have t
 | FR-003 | Save incomplete requests as drafts | ✅ | `Draft` state and an explicit **Save draft** at every step. **Autosave is not implemented** — see D-9. `interface.md` §4 |
 | FR-004 | Validate mandatory and conditional fields before submission | ✅ | FormRequest + Livewire rules; the business-plan conditional block. `interface.md` §4 |
 | FR-005 | Unique configurable request number | ✅ | Generated on submit, immutable. `database-design.md` §5 |
-| FR-006 | Upload, categorise, preview and download authorised documents | ⛔ | **Not built.** See D-7 |
+| FR-006 | Upload, categorise, preview and download authorised documents | 🟡 | **Built.** Upload (validated by content), a category, a private store outside the document root, and an authorised download route. **Preview is not built** — inline rendering of arbitrary types is a security surface needing care, and `Content-Disposition: attachment` is the deliberate default. See D-3 for the malware-scanning deviation |
 | FR-007 | Support approve, reject and return-for-amendment | ✅ | The transition table. `design.md` §1.3 |
 | FR-008 | Multiple units submit independent recommendations without overwriting | ✅ | `recommendations` with `version_no`. `database-design.md` §5 |
 | FR-009 | Route by tier, classification, decision and governance route | ✅ | **Tier is now derived from the budget band** — a requestor cannot pick a tier that contradicts the amount, which is a routing rule rather than a preference. Route set at consolidation; `requires_committee` drives Full only |
@@ -90,7 +93,7 @@ is not *how many requirements are green* but *which specific things still have t
 | BR-003 | Conditional documents and fields driven by tier and classification | 🟡 | **Fields: done.** Two mechanisms: a tier makes any governed field required, optional or hidden (`tier_field_rules`, the **Tier field rules** screen), and **the tier itself is decided by the budget band** (`tiers.budget_min/budget_max`, editable on **Reference data**) with a contradicting pair refused. Conditions routed by business-plan status and urgency remain. **Documents are not built — D-7**, and classification drives who reviews rather than which fields apply |
 | BR-004 | The approver cannot modify the requestor's justification | ✅ | The approval action writes `approval_tasks` only |
 | BR-005 | Recommendations versioned or preserved, never overwritten | ✅ | `version_no` inserts a new row |
-| BR-006 | Closure requires all mandatory decisions and documentation | 🟡 | **Decisions enforced; documentation not.** See D-7 |
+| BR-006 | Closure requires all mandatory decisions and documentation | ✅ | **Both halves enforced.** Decisions were always checked; documentation is now checked too — `closureBlockers()` refuses close while a request has no attachments. It previously PRINTED a message claiming documentation was checked while checking only the decisions, so a request could close with no evidence at all |
 | BR-007 | A returned request resumes at the configured stage | ✅ | Returning stage recorded on the transition |
 | BR-008 | Delegated decisions capture delegated-from and acting users | ✅ | `delegated_from_id` separate from `approver_id` |
 | BR-009 | System-managed fields not editable through ordinary screens | 🟡 | `status`, `current_stage`, `tier_id`, `classification_id` and `governance_route_id` **are mass-assignable**. Protected because every form maps fields explicitly and the wizard documents why — so it holds by discipline rather than by the model refusing. A future `fill($request->all())` would open it silently |
@@ -103,7 +106,7 @@ is not *how many requirements are green* but *which specific things still have t
 | ID | Scenario | Status | Note |
 |---|---|---|---|
 | UAT-001 | Requestor saves and resumes a draft | ✅ | |
-| UAT-002 | Mandatory and conditional validation prevents incomplete submission | 🟡 | Field validation is enforced, including **tier-driven requirements**. Conditional **documents** cannot be — D-7 |
+| UAT-002 | Mandatory and conditional validation prevents incomplete submission | ✅ | Field validation enforced, including **tier-driven requirements** and **upload type and size limits**. Conditional *documents* are not yet per-tier — D-7 |
 | UAT-003 | Unique request number generated without duplication | ✅ | |
 | UAT-004 | Project Owner approves and the workflow advances | ✅ | |
 | UAT-005 | Project Sponsor rejects with mandatory comments | ✅ | |
@@ -141,14 +144,14 @@ discovered.
 
 | ID | What | Severity |
 |---|---|---|
-| **D-7** | Document upload not built; closure does not check for documentation | **High** |
 | **D-10** | Entra SSO code-complete but never run against a tenant | Medium — configuration |
+| **D-3** | No malware scanning, now that uploads exist | **Medium** — a live gap rather than a moot one |
+| D-7 | Documents built; no preview, no per-tier required list | Medium |
 | D-8 | Two role landing pages are placeholders | Medium |
 | D-9 | Autosave and editable templates not built | Low |
 
-**D-7 is now the highest, because it is the only one where the application accepts a request it
-should refuse.** D-10 is a decision plus an hour of provisioning, and the code no longer blocks on
-it — which was the point of making the driver configurable.
+**D-3 has moved up.** It was accepted when there was no upload to scan, so it was a deviation on
+paper. Uploads now exist, which makes the missing scan a real gap rather than a theoretical one.
 
 ### D-1 — Entra ID SSO deferred
 
@@ -210,18 +213,19 @@ it — which was the point of making the driver configurable.
 | **Mitigation** | Directory listing disabled via `Options -Indexes` **committed in `public/.htaccess`**; the document root points at `public/`, so application files are not web-reachable |
 | **Production plan** | Portable by design — no server-specific code. Paths and URL in `.env` only |
 
-### D-7 — Document upload not built
+### D-7 — Documents: built, with three limits
 
 | | |
 |---|---|
 | **Brief requires** | FR-006 — users upload, categorise, preview and download authorised documents. BR-006 — closure requires all mandatory decisions **and documentation** |
-| **POC delivers** | The schema, the model, the configuration, the private storage directory and the authorisation design are in place. **The upload and download actions are not** |
-| **Justification** | None. This is an **incomplete requirement**, recorded here rather than described as a deferral. The brief's §5 lists "Documents and Review" as a wizard step and §9.2's UAT-001 through UAT-015 depend on documents at three points — UAT-002 (conditional documents), UAT-006 (returned for a missing attachment) and UAT-006/UAT-009 (conditions evidenced) |
-| **What exists** | `attachments` table with checksum and private storage path; `Attachment` model with a human-readable size helper; `config('itrequest.attachments')` with a narrow MIME allow-list, a 20 MB cap and a documented deviation for malware scanning; `storage/app/private/attachments` created by both the installer and the deploy; `deploy-check` warns when the directory is missing |
-| **What does not** | Any way to attach a file, and any way to retrieve one. The request detail screen eager-loads `attachments` and never renders them |
-| **Consequence** | `GovernanceService::closureBlockers()` states it requires "all mandatory decisions and documentation" and checks only the decisions. A request can be closed with no documents at all. The message is honest about the intent and the check does not implement it — **BR-006 is half-enforced** |
-| **Effort to close** | Small and well-contained: a Livewire upload on the wizard's final step, a download action authorised through `ItRequestPolicy`, a document list on the detail screen, and one extra clause in `closureBlockers()`. The schema, storage layout and configuration already accommodate it |
-| **Production plan** | Build before go-live. This is a stated requirement, not an enhancement |
+| **Now built** | `AttachmentService` (store, stream, delete, checksum verify), `AttachmentController` for authorised download, upload and removal on the request detail screen, `storage/app/private/attachments` on its own filesystem disk, and the **documentation clause in `closureBlockers()`** |
+| **What this fixed** | BR-006 was half-enforced. `closureBlockers()` printed *"all mandatory decisions and documentation are recorded"* while checking only the decisions, so a request could be closed with no supporting evidence at all — and the code read as though it required some. That is the failure mode that survives review: the code says the right thing and does not do it |
+| **How the file is protected** | Never addressable by path. The browser asks `/documents/{id}`, the route authorises `viewDocuments` against the **request** the document belongs to, and only then do the bytes move. `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff` stop an uploaded file being executed in the browser as a page on this domain with the session cookie attached |
+| **Limit 1 — preview is not built** | The brief asks for preview; the implementation always downloads. Inline rendering of arbitrary types means getting `Content-Type`, CSP and the file's own content all correct at once, and a mistake there is an XSS on an authenticated domain. Download is the safe default, and preview can be added per-type — PDF and images are the ones that matter — without weakening the general case |
+| **Limit 2 — no per-tier required documents** | Closure requires **at least one** document. The brief does not say which documents are mandatory for which tier, and inventing a list would be inventing governance. When the business names them, this becomes a per-category check and the message gains the list. **🔵 Requires a business answer** |
+| **Limit 3 — malware scanning** | Unchanged from D-3, and now real rather than moot: uploads exist, so the missing scan is a live gap. Files are never publicly addressable and never executed, and MIME types are validated by content — but **none of that is a substitute for scanning** |
+| **Also worth knowing** | `config('itrequest.attachments.disk')` returned `private` while **no disk of that name was defined** — every `Storage::disk()` call would have thrown. Nothing called it, because the upload did not exist, so the mismatch survived two compliance reviews. The disk is now real and the name comes from one place |
+| **Production plan** | Add scanning at upload with quarantine until cleared (D-3). Add per-type preview once the required-document list is agreed |
 
 ### D-8 — Two screens remain placeholders
 

@@ -38,6 +38,42 @@ return [
             'report' => false,
         ],
 
+        /*
+         * Uploaded request documents (FR-006).
+         *
+         * WHY ITS OWN DISK RATHER THAN `local`
+         *
+         * `local` points at `storage/app/private`, which is also where Laravel keeps its own
+         * scratch state. Giving attachments a subdirectory of their own means a `storage:clear`
+         * habit, or anything else that empties a framework directory, cannot reach them — and
+         * that an operator can see at a glance which part of the tree is the organisation's data
+         * and which part is regenerable.
+         *
+         * `visibility` is private and `throw` is true, both deliberately:
+         *
+         *   - **private** because a document here is a budget, a quotation or a risk assessment.
+         *     Nothing in this disk is ever served by a web server; `AttachmentService` streams it
+         *     through a route that authorises the request first, which is the difference between
+         *     a file a requestor can share and a data leak.
+         *   - **throw true** because a failed write must be an exception, not a `false` return.
+         *     A silently failed upload would leave an `attachments` row pointing at nothing, and
+         *     the first evidence would be an approver unable to open a document they were told
+         *     existed.
+         *
+         * The root is created by `itrequest:install` and by `itrequest:deploy`, and
+         * `itrequest:deploy-check` warns when it is missing — because a missing directory turns
+         * every upload into an exception, and the message would otherwise name a path rather than
+         * the deploy step that skipped it.
+         */
+        'attachments' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/attachments'),
+            'serve' => false,
+            'throw' => true,
+            'report' => false,
+            'visibility' => 'private',
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

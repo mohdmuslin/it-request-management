@@ -158,7 +158,27 @@ return [
 
     'temporary_file_upload' => [
         'disk' => env('LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK'), // Example: 'local', 's3'             | Default: 'default'
-        'rules' => null,                                      // Example: ['file', 'mimes:png,jpg'] | Default: ['required', 'file', 'max:12288'] (12MB)
+        /*
+         * LIVEWIRE'S LIMIT MUST NOT BE LOWER THAN THE APPLICATION'S.
+         *
+         * The default here is `['required', 'file', 'max:12288']` — 12 MB — while
+         * `config/itrequest.attachments.max_size_kb` allows 20 MB. A 15 MB document would therefore
+         * be refused by LIVE WIRE before `AttachmentService::rules()` ever ran, and the message the
+         * requestor saw would be about a failed upload rather than about size.
+         *
+         * That is the worst shape of bug in a limit: the application states one number and enforces
+         * a smaller one somewhere else, and no test compares them because each is correct in its own
+         * file. So this reads the SAME config value, which makes the two impossible to disagree.
+         *
+         * `max:` here is in kilobytes and applies to the temporary upload; the application's own
+         * rule applies again at store time. The duplicates are deliberate — the outer one protects
+         * the host, the inner one is the domain rule — but the CEILING must be the same.
+         */
+        'rules' => [
+            'required',
+            'file',
+            'max:'.(int) config('itrequest.attachments.max_size_kb', 20480),
+        ],
         'directory' => null,                                  // Example: 'tmp'                     | Default: 'livewire-tmp'
         'middleware' => null,                                 // Example: 'throttle:5,1'            | Default: 'throttle:60,1'
         'preview_mimes' => [                                  // Supported file types for temporary pre-signed file URLs...

@@ -530,6 +530,36 @@ class GovernanceService
             $blockers[] = "Approval task at '{$task->stage}' is still awaiting a decision.";
         }
 
+        /*
+         * 6. Documentation (BR-006).
+         *
+         * THIS CHECK IS WHY THE ATTACHMENT FEATURE EXISTS.
+         *
+         * BR-006 says closure requires "all mandatory decisions AND documentation". The decisions
+         * half was enforced from the beginning. The documentation half was NOT — this method's own
+         * message said "all mandatory decisions and documentation are recorded" while checking only
+         * the decisions, so a request could be closed with no supporting evidence at all and the
+         * code read as though it required some.
+         *
+         * That is the failure mode that survives review: the code says the right thing and does not
+         * do it. Found by reading this method against the seeded data rather than by a failing test,
+         * because no test asserted the absence of something.
+         *
+         * WHY "AT LEAST ONE", NOT "PER CATEGORY"
+         *
+         * The brief does not say which documents are mandatory for which tier — that is a business
+         * decision, and inventing a required-document list would be inventing governance. What can
+         * be said without inventing anything is that a request closed with NO evidence is not
+         * auditable, which is the whole of BR-006's documentation clause.
+         *
+         * When the business names the required documents, this becomes a per-category check and
+         * the message gains the list. Until then, requiring one is the honest position.
+         */
+        if (! $request->attachments()->exists()) {
+            $blockers[] = 'No supporting documents have been attached. BR-006 requires the '
+                .'documentation a request was decided on.';
+        }
+
         return $blockers;
     }
 

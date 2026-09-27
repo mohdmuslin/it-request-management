@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AttachmentController;
 use App\Http\Controllers\ReportExportController;
 use App\Http\Controllers\SsoController;
 use App\Livewire\Admin\AuditLog;
@@ -97,6 +98,20 @@ Route::middleware('auth')->group(function () {
     Route::get('/requests/{request}/edit', Create::class)->name('requests.edit');
 
     Route::get('/requests/{request}', Show::class)->name('requests.show');
+
+    /*
+     * Document download (FR-006).
+     *
+     * NOT under `/requests/{request}/...`, and that is deliberate: the document id is what the
+     * browser has, and threading the request id through the URL would mean two ids that could
+     * disagree — a route where `/requests/9/documents/42` names a document belonging to request 7.
+     * One id, resolved to its own request, authorised against that.
+     *
+     * The `{attachment}` binding is implicit, so an unknown id is a 404 from the router before the
+     * controller runs.
+     */
+    Route::get('/documents/{attachment}', AttachmentController::class)
+        ->name('attachments.download');
 
     Route::get('/approvals', App\Livewire\Approvals\Index::class)->name('approvals.index');
 

@@ -1,9 +1,13 @@
 <?php
 
 use App\Enums\UserRole;
+use App\Models\Attachment;
+use App\Models\ItRequest;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\AttachmentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Testing\Fakes\NotificationFake;
 use Tests\TestCase;
@@ -82,4 +86,40 @@ function fakeNotifications(): NotificationFake
     Notification::fake();
 
     return Notification::getFacadeRoot();
+}
+
+/**
+ * Attach a document to a request, for tests about something else.
+ *
+ * WHY THIS EXISTS AS A HELPER
+ *
+ * BR-006 requires documentation before closure, so almost every governance test now needs at
+ * least one document to get past the closure check — and the business of building an
+ * `UploadedFile`, driving the service and cleaning up afterwards is the same in all of them.
+ *
+ * It writes to the REAL attachments disk through `UploadedFile::fake()`, which Laravel backs with
+ * an in-memory file. That matters: a helper that inserted an `attachments` row directly would
+ * satisfy the closure check while the download route would then fail, and a test asserting "a
+ * request can be closed" would pass for a request whose documents cannot be opened.
+ *
+ * The file is named `document.pdf` with a real PDF mime type, so it passes
+ * `AttachmentService::rules()` — the same validation a browser upload meets.
+ */
+function attachDocument(ItRequest $request, ?User $uploader = null, string $name = 'vendor-quote.pdf'): Attachment
+{
+    $uploader ??= $request->requestor ?? User::factory()->create();
+
+    // Signed in as the uploader, because the service records `auth()->id()` as a fallback and
+    // the audit row is asserted in some tests.
+    test()->actingAs($uploader);
+
+    return app(AttachmentService::class)->store(
+        request: $request,
+        file: UploadedFile::fake()->createWithContent(
+            $name,
+            "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n"
+        ),
+        category: 'Vendor quote',
+        uploader: $uploader,
+    );
 }

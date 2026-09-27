@@ -230,6 +230,44 @@ class ItRequestPolicy
             && $user->hasAnyRole(UserRole::CommitteeSecretariat, UserRole::Administrator);
     }
 
+    /**
+     * May this user attach or remove a document (FR-006).
+     *
+     * THE SAME RULE AS EDITING THE REQUEST BODY, DELIBERATELY.
+     *
+     * A document is part of the request — the vendor quote is what the approver reads the amount
+     * against. Letting somebody attach a file to a request they may not edit would mean the
+     * evidence could change while an approver is reading it, which is precisely the failure
+     * `update()` exists to prevent.
+     *
+     * So this delegates rather than restating: if the rules for editing ever change, the rules for
+     * attaching change with them, and there is no second place to remember. The same reasoning as
+     * a returned request resuming at the stage that returned it — one rule, one implementation.
+     *
+     * WHO CANNOT ATTACH:
+     *
+     *   - an **Auditor**, because read-only is the whole of that role
+     *   - an **approver**, because what they are approving must not move underneath them
+     *   - a **governance reviewer**, because their assessment is of what was submitted
+     */
+    public function attachDocuments(User $user, ItRequest $request): bool
+    {
+        return $this->update($user, $request);
+    }
+
+    /**
+     * May this user open a document.
+     *
+     * Wider than attaching: anyone who may SEE the request may read the documents attached to it.
+     * A separate ability rather than reusing `view` so the route has something to authorise
+     * against that names what it is protecting, and so a future rule — a category restricted to
+     * governance, say — has one place to live.
+     */
+    public function viewDocuments(User $user, ItRequest $request): bool
+    {
+        return $this->view($user, $request);
+    }
+
     /** The requestor, the Owner or the Sponsor. */
     private function isNamedOn(User $user, ItRequest $request): bool
     {

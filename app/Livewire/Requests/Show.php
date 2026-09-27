@@ -9,10 +9,12 @@ use App\Models\GovernanceRoute;
 use App\Models\ItRequest;
 use App\Models\ReviewUnit;
 use App\Models\Tier;
+use App\Services\AttachmentService;
 use App\Services\GovernanceService;
 use App\Services\WorkflowService;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 /**
  * Request detail — the screen the project succeeds or fails on.
@@ -90,6 +92,22 @@ class Show extends Component
     /** Which governance panel is open. */
     public string $panel = '';
 
+    /*
+     * Document upload (FR-006).
+     *
+     * `WithFileUploads` gives Livewire a temporary upload endpoint and a `TemporaryUploadedFile`
+     * property. The file lands in `storage/app/livewire-tmp` first and is moved by
+     * `AttachmentService` only once it has been validated — so an oversized or wrongly-typed file
+     * is refused before anything reaches the attachments disk.
+     */
+    use WithFileUploads;
+
+    /** The pending upload, before it is stored. Null when nothing has been chosen. */
+    public $document = null;
+
+    /** The category the pending upload is filed under. */
+    public string $document_category = '';
+
     public function mount(ItRequest $request): void
     {
         $this->request = $request;
@@ -133,6 +151,85 @@ class Show extends Component
     {
         $this->panel = '';
         $this->resetErrorBag();
+    }
+
+    /**
+     * Attach a document (FR-006).
+     *
+     * AUTHORISED AGAINST `attachDocuments`, which delegates to `update` — a document is part of the
+     * request, so whoever may change the request may change its evidence, and nobody else. That
+     * keeps the approver's guarantee intact: what they are reading cannot move underneath them.
+     *
+     * VALIDATED BEFORE STORED. The rules come from `AttachmentService::rules()`, which derives the
+     * extension allow-list from the config's mime list, so widening what may be uploaded is a
+     * config change rather than an edit here.
+     */
+    public function uploadDocument(): void
+    {
+        $this->authorize('attachDocuments', $this->request);
+
+        $this->validate(
+            ['document' => AttachmentService::rules()],
+            [
+                'document.required' => 'Choose a file first.',
+                'document.max' => 'That file is larger than the size limit. Compress it, or split it.',
+                'document.mimes' => 'That file type is not accepted. Allowed: PDF, Word, Excel, PNG and JPEG.',
+            ],
+            ['document' => 'file'],
+        );
+
+        try {
+            app(AttachmentService::class)->store(
+                $this->request,
+                $this->document,
+                $this->document_category ?: null,
+            );
+        } catch (\Throwable $e) {
+            /*
+             * Reported rather than thrown. The likely causes are a full disk or a missing
+             * directory on the host — neither of which the requestor can fix, and both of which
+             * would otherwise show as a 500 with the reason only in a log they cannot read.
+             */
+            report($e);
+
+            $this->addError('document', 'The file could not be stored. Try again, or tell an administrator.');
+
+            return;
+        }
+
+        $this->reset('document', 'document_category');
+
+        $this->flash = 'Document attached.';
+
+        // Reload, so the new document appears in the list without a page refresh.
+        $this->request->refresh();
+    }
+
+    /**
+     * Remove a document.
+     *
+     * The same ability as attaching: whoever could put it there can take it back, and nobody else.
+     * Unlike every other removal in this application this is a HARD DELETE — see
+     * `AttachmentService::delete()` for why the trail survives it.
+     */
+    public function removeDocument(int $attachmentId): void
+    {
+        $this->authorize('attachDocuments', $this->request);
+
+        /*
+         * Looked up THROUGH the request's own relation, not `Attachment::findOrFail()`.
+         *
+         * The id arrives from the browser, and resolving it globally would let somebody pass an id
+         * belonging to a request they may edit in order to delete a document on one they may not.
+         * Scoping the lookup means the id is only a handle within this request.
+         */
+        $attachment = $this->request->attachments()->findOrFail($attachmentId);
+
+        app(AttachmentService::class)->delete($attachment);
+
+        $this->flash = 'Document removed.';
+
+        $this->request->refresh();
     }
 
     /**
@@ -404,7 +501,15 @@ class Show extends Component
             'histories' => fn ($q) => $q->with('performedBy:id,name')->orderBy('created_at'),
             'approvalTasks' => fn ($q) => $q->with('approver:id,name')->orderBy('created_at'),
             'comments' => fn ($q) => $q->with('user:id,name')->orderBy('created_at'),
-            'attachments',
+
+            /*
+             * Documents, and the uploader.
+             *
+             * `uploadedBy` is eager-loaded because the list shows who attached each one — without
+             * it the view would run a query per document, which on a request with a dozen
+             * attachments is a dozen queries for a name.
+             */
+            'attachments' => fn ($q) => $q->with('uploadedBy:id,name')->orderBy('created_at'),
 
             // ---- Governance ----------------------------------------------------
             'completenessAssessment' => fn ($q) => $q->with('assessedBy:id,name'),

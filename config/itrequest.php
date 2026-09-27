@@ -178,7 +178,19 @@ return [
     */
 
     'attachments' => [
-        'disk' => env('ITREQUEST_ATTACHMENT_DISK', 'private'),
+        /*
+         * WHY THE DEFAULT IS `attachments` AND NOT `private`
+         *
+         * `private` was the original value, and **no disk of that name was ever defined** — so
+         * every `Storage::disk(config('itrequest.attachments.disk'))` call would have thrown
+         * "Disk [private] does not have a configured driver", naming a disk rather than the
+         * config file that has never matched one. Nothing called it, because the upload was never
+         * built, so the mismatch sat here through two compliance reviews unnoticed.
+         *
+         * The disk is now the one defined in `config/filesystems.php`, scoped to
+         * `storage/app/private/attachments`.
+         */
+        'disk' => env('ITREQUEST_ATTACHMENT_DISK', 'attachments'),
         'max_size_kb' => (int) env('ITREQUEST_ATTACHMENT_MAX_KB', 20480),
         'allowed_mimes' => [
             'application/pdf',

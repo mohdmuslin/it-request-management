@@ -546,6 +546,107 @@
         </div>
     @endif
 
+    {{-- ---- Documents (FR-006) ---------------------------------------------- --}}
+    @can('viewDocuments', $r)
+        <div class="mt-5 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+            <h2 class="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-900">
+                Documents
+                @if ($r->attachments->isNotEmpty())
+                    <span class="font-normal text-slate-500">{{ $r->attachments->count() }}</span>
+                @endif
+            </h2>
+
+            @if ($r->attachments->isEmpty())
+                <p class="px-4 py-4 text-sm text-slate-500">
+                    Nothing attached yet.
+                    @can('attachDocuments', $r)
+                        A request cannot be closed without at least one supporting document — that is
+                        the point of the evidence trail.
+                    @endcan
+                </p>
+            @else
+                <ul class="divide-y divide-slate-100">
+                    @foreach ($r->attachments as $document)
+                        <li class="flex flex-wrap items-center gap-3 px-4 py-3">
+                            <div class="min-w-0 flex-1">
+                                <a href="{{ route('attachments.download', $document) }}"
+                                   class="text-sm font-medium text-indigo-700 hover:underline">
+                                    {{ $document->original_name }}
+                                </a>
+
+                                <p class="mt-0.5 text-xs text-slate-500">
+                                    {{ $document->humanSize() }}
+                                    @if ($document->category)
+                                        · {{ $document->category }}
+                                    @endif
+                                    · {{ $document->uploadedBy?->name ?? 'Unknown' }},
+                                    {{ $document->created_at->format('d M Y') }}
+                                </p>
+                            </div>
+
+                            @can('attachDocuments', $r)
+                                <button type="button"
+                                        wire:click="removeDocument({{ $document->id }})"
+                                        wire:confirm="Remove this document? It is deleted rather than deactivated, and this cannot be undone."
+                                        class="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                                    Remove
+                                </button>
+                            @endcan
+                        </li>
+                    @endforeach
+                </ul>
+            @endif
+
+            @can('attachDocuments', $r)
+                <div class="border-t border-slate-100 bg-slate-50 px-4 py-4">
+                    <div class="flex flex-wrap items-end gap-3">
+                        <div class="min-w-[240px] flex-1">
+                            <label for="document" class="block text-xs font-medium text-slate-600">
+                                Attach a document
+                            </label>
+                            {{--
+                                The type and size limits are stated rather than discovered.
+
+                                A rejected upload that says only "invalid file type" leaves the
+                                person guessing at the rule, and the commonest cause of a refusal
+                                here is a format that was never accepted in the first place.
+                            --}}
+                            <input id="document" type="file" wire:model="document"
+                                   accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                                   class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-slate-200 file:px-3 file:py-1 file:text-xs file:font-medium focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                            <p class="mt-1 text-xs text-slate-500">
+                                PDF, Word, Excel, PNG or JPEG.
+                                Up to {{ number_format((int) config('itrequest.attachments.max_size_kb') / 1024, 0) }} MB.
+                                Stored privately — nobody outside this request can open it.
+                            </p>
+
+                            @error('document')
+                                <p class="mt-1 text-xs font-medium text-red-700" role="alert">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <div>
+                            <label for="document_category" class="block text-xs font-medium text-slate-600">
+                                Category <span class="font-normal text-slate-400">(optional)</span>
+                            </label>
+                            <input id="document_category" type="text" wire:model="document_category"
+                                   placeholder="e.g. Vendor quote"
+                                   class="mt-1 w-44 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                        </div>
+
+                        <button type="button" wire:click="uploadDocument"
+                                wire:loading.attr="disabled" wire:target="document,uploadDocument"
+                                class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+                            <span wire:loading.remove wire:target="uploadDocument">Attach</span>
+                            <span wire:loading wire:target="document">Uploading…</span>
+                            <span wire:loading wire:target="uploadDocument">Saving…</span>
+                        </button>
+                    </div>
+                </div>
+            @endcan
+        </div>
+    @endcan
+
     {{-- ---- Governance record ---------------------------------------------- --}}
     @if ($r->completenessAssessment || $r->recommendations->isNotEmpty() || $r->consolidation || $r->committeeDecision)
         <div class="mt-5 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">

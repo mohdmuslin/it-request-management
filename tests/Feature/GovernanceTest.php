@@ -570,6 +570,19 @@ it('closes a Light-route request once nothing is outstanding', function () {
     $request = atTechnicalRecommendation();
     fileAllRecommendations($request);
 
+    /*
+     * A DOCUMENT IS NOW REQUIRED, AND THIS TEST USED TO PASS WITHOUT ONE.
+     *
+     * BR-006 says closure requires "all mandatory decisions and documentation". The decisions half
+     * was enforced from the start; the documentation half was a message with no check behind it, so
+     * this test passed against a request carrying no evidence at all — and it would have gone on
+     * passing, because the absence of a check is not something a test notices.
+     *
+     * Found by reading `closureBlockers()` against the seeded data, not by a failure. The
+     * failure only appeared once the check was written, which is the right order.
+     */
+    attachDocument($request);
+
     $light = GovernanceRoute::where('code', 'light')->first();
     $this->governance->consolidate($this->request->fresh(), $this->hou, $light->id, 'Light route.');
 
@@ -580,6 +593,48 @@ it('closes a Light-route request once nothing is outstanding', function () {
 
     expect($closed->status)->toBe(RequestStatus::Closed->value)
         ->and($closed->closed_at)->not->toBeNull();
+});
+
+it('refuses closure when no documents were attached', function () {
+    /*
+     * BR-006's documentation clause, which for two revisions was unenforced. The message this
+     * method already printed claimed documentation was checked; the code checked the decisions.
+     *
+     * A request closed with no supporting evidence is not auditable — the trail records that
+     * something was approved on the strength of a case nobody can produce.
+     */
+    $request = atTechnicalRecommendation();
+    fileAllRecommendations($request);
+
+    $light = GovernanceRoute::where('code', 'light')->first();
+    $this->governance->consolidate($this->request->fresh(), $this->hou, $light->id, 'Light route.');
+
+    $fresh = $this->request->fresh();
+
+    expect($this->governance->canClose($fresh))->toBeFalse()
+        ->and($this->governance->closureBlockers($fresh))
+        ->toHaveCount(1)
+        ->and($this->governance->closureBlockers($fresh)[0])->toContain('No supporting documents');
+
+    // And the closure itself is refused, not only reported.
+    expect(fn () => $this->governance->close($fresh, $this->reviewer))
+        ->toThrow(RuntimeException::class, 'documents');
+});
+
+it('allows closure once a document is attached', function () {
+    // The other half: the check must not be a wall. One document is enough, and it does not
+    // matter which category or who attached it.
+    $request = atTechnicalRecommendation();
+    fileAllRecommendations($request);
+
+    $light = GovernanceRoute::where('code', 'light')->first();
+    $this->governance->consolidate($this->request->fresh(), $this->hou, $light->id, 'Light route.');
+
+    expect($this->governance->canClose($this->request->fresh()))->toBeFalse();
+
+    attachDocument($this->request->fresh());
+
+    expect($this->governance->closureBlockers($this->request->fresh()))->toBe([]);
 });
 
 it('refuses closure while recommendations are outstanding', function () {
@@ -676,6 +731,9 @@ it('records every governance act in the history', function () {
             outcome: RecommendationOutcome::Recommended,
         );
     }
+
+    // Closure needs documentation as well as decisions now (BR-006).
+    attachDocument($request);
 
     $light = GovernanceRoute::where('code', 'light')->first();
     $this->governance->consolidate($this->request->fresh(), $this->hou, $light->id, 'Light route.');
