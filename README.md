@@ -129,8 +129,8 @@ Target: `https://itrequest.mwstay.com/`
 
 | Item | Value |
 |---|---|
-| App root | `/home/mwstayco/itrequest.mwstay.com/` |
-| Document root | `/home/mwstayco/itrequest.mwstay.com/public` |
+| App root | `/home/aitirikuesform/itrequest.mwstay.com/laravel-app/` |
+| Document root | `/home/aitirikuesform/itrequest.mwstay.com/laravel-app/public` |
 
 **Verified working (2026-09-24):** the document root points at `public/`, directory indexing is
 disabled, and `/cgi-bin/` and `/php.ini` are outside the webroot and return 404.

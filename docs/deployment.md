@@ -1,7 +1,7 @@
 # Deployment runbook
 
-Live at **`https://itrequest.mwstay.com/`** · app root `/home/mwstayco/itrequest.mwstay.com/`
-· document root `/home/mwstayco/itrequest.mwstay.com/public`
+Live at **`https://itrequest.mwstay.com/`** · app root `/home/aitirikuesform/itrequest.mwstay.com/laravel-app/`
+· document root `/home/aitirikuesform/itrequest.mwstay.com/laravel-app/public`
 
 > **This host has no SSH and no cPanel Terminal.** Every command in this document runs
 > through cPanel → **Cron Jobs**, usually as a one-off job that is deleted afterwards.
@@ -40,7 +40,7 @@ Get the path from cPanel → **Select PHP Version**, then confirm it works by ru
 something that prints:
 
 ```
-* * * * *  /usr/local/bin/php -v >> /home/mwstayco/phpcheck.log 2>&1
+* * * * *  /usr/local/bin/php -v >> /home/aitirikuesform/phpcheck.log 2>&1
 ```
 
 Wait a minute, read `phpcheck.log`, then **delete the job**. Any readable output proves
@@ -166,7 +166,7 @@ ITREQUEST_MAIL_ENABLED=false
 One-off cron job. Replace the path with the one verified in §2:
 
 ```
-* * * * *  cd /home/mwstayco/itrequest.mwstay.com && /usr/local/bin/php artisan itrequest:install --admin-email=you@mwstay.com >> /home/mwstayco/install.log 2>&1
+* * * * *  cd /home/aitirikuesform/itrequest.mwstay.com/laravel-app && /usr/local/bin/php artisan itrequest:install --admin-email=you@mwstay.com >> /home/aitirikuesform/install.log 2>&1
 ```
 
 Wait a minute, read `install.log`, then **delete the job**.
@@ -196,7 +196,7 @@ feature: re-running it would regenerate `APP_KEY`.
 cPanel → **Domains** → the subdomain → Document Root:
 
 ```
-/home/mwstayco/itrequest.mwstay.com/public
+/home/aitirikuesform/itrequest.mwstay.com/laravel-app/public
 ```
 
 cPanel will not allow a document root outside the subdomain's own directory, which is why
@@ -217,7 +217,7 @@ leaves a `DEPLOY` flag that a cron job acts on.
 check). Without it, the files arrive and the migrations do not run:
 
 ```
-0 * * * *  cd /home/mwstayco/itrequest.mwstay.com && [ -f DEPLOY ] && rm -f DEPLOY && /usr/local/bin/php artisan itrequest:deploy >> /home/mwstayco/deploy.log 2>&1
+0 * * * *  cd /home/aitirikuesform/itrequest.mwstay.com/laravel-app && [ -f DEPLOY ] && rm -f DEPLOY && /usr/local/bin/php artisan itrequest:deploy >> /home/aitirikuesform/deploy.log 2>&1
 ```
 
 > **Redirect the output.** Cron sends it to `/dev/null` otherwise, and a failed deployment
@@ -251,7 +251,7 @@ saving on a handful of routes is not worth a release that 500s on every page.
 Run this after any configuration change, and before go-live:
 
 ```
-* * * * *  cd /home/mwstayco/itrequest.mwstay.com && /usr/local/bin/php artisan itrequest:deploy-check >> /home/mwstayco/check.log 2>&1
+* * * * *  cd /home/aitirikuesform/itrequest.mwstay.com/laravel-app && /usr/local/bin/php artisan itrequest:deploy-check >> /home/aitirikuesform/check.log 2>&1
 ```
 
 It reads and changes nothing, so it is safe to run against the live site.
@@ -292,7 +292,7 @@ human deciding what counts as a problem.
 Both are registered in `routes/console.php` and run from a single cron entry:
 
 ```
-* * * * *  cd /home/mwstayco/itrequest.mwstay.com && /usr/local/bin/php artisan schedule:run >> /home/mwstayco/schedule.log 2>&1
+* * * * *  cd /home/aitirikuesform/itrequest.mwstay.com/laravel-app && /usr/local/bin/php artisan schedule:run >> /home/aitirikuesform/schedule.log 2>&1
 ```
 
 > **`--stop-when-empty` rather than a daemon.** A daemon that dies is not restarted by
@@ -350,7 +350,7 @@ look identical to a working configuration from the settings screen:
 So test it, with a real inbox you can open:
 
 ```
-* * * * *  cd /home/mwstayco/itrequest.mwstay.com && /usr/local/bin/php artisan itrequest:test-mail you@mwstay.com >> /home/mwstayco/mailtest.log 2>&1
+* * * * *  cd /home/aitirikuesform/itrequest.mwstay.com/laravel-app && /usr/local/bin/php artisan itrequest:test-mail you@mwstay.com >> /home/aitirikuesform/mailtest.log 2>&1
 ```
 
 Read `mailtest.log`, **then delete the cron job.**

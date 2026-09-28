@@ -42,7 +42,42 @@ $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
 try {
     $password = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
 
-    # ---- 1. Does the password authenticate, and what is the account's root? ----
+    # ---- 0. Where does this account LAND? ----
+    #
+    # Asked FIRST, because it is the one answer that cannot be inferred from a listing. A listing
+    # showing `artisan, app, public` might be the application root or one level above it, and the
+    # difference decides whether a deploy uploads into the app or beside it.
+    #
+    # `PrintWorkingDirectory` is the FTP `PWD` command: the server replies with its own absolute
+    # path, so there is nothing to deduce.
+    Write-Host ''
+    Write-Host '--- server-side working directory (FTP PWD) ---' -ForegroundColor Yellow
+
+    $pwdReq = [System.Net.FtpWebRequest]::Create("ftp://$Server/")
+    $pwdReq.Method = [System.Net.WebRequestMethods+Ftp]::PrintWorkingDirectory
+    $pwdReq.Credentials = New-Object System.Net.NetworkCredential($Username, $password)
+    $pwdReq.UsePassive = $true
+    $pwdReq.EnableSsl = $false
+    $pwdReq.KeepAlive = $false
+    $pwdReq.Timeout = 30000
+
+    try {
+        $pwdResp = $pwdReq.GetResponse()
+        $pwdReader = New-Object System.IO.StreamReader($pwdResp.GetResponseStream())
+        $remoteRoot = $pwdReader.ReadToEnd().Trim()
+        $pwdReader.Close(); $pwdResp.Close()
+
+        Write-Host "  $remoteRoot" -ForegroundColor White
+        Write-Host ''
+        Write-Host '  A deploy with `server-dir: ./` uploads into EXACTLY this path.' -ForegroundColor Cyan
+        Write-Host '  The application root must be this path, or the deploy lands beside it.' -ForegroundColor Cyan
+    }
+    catch {
+        Write-Host '  Could not read it: ' -NoNewline -ForegroundColor Yellow
+        Write-Host $_.Exception.Message
+    }
+
+    # ---- 1. Does the password authenticate, and what is in that directory? ----
     Write-Host ''
     Write-Host '--- login test (plain FTP, port 21) ---' -ForegroundColor Yellow
 
@@ -76,18 +111,22 @@ try {
         Write-Host ''
         Write-Host '--- what this means ---' -ForegroundColor Cyan
 
-        # The FTP account's root IS the application root, because server-dir is `./`.
+        # The FTP account's root should BE the application root, because server-dir is `./`.
+        # `laravel-app` is this project's app root, so its contents are what we expect here.
         $expect = @('artisan', 'app', 'public')
         $found = @($expect | Where-Object { $names -contains $_ })
 
         if ($found.Count -eq 3) {
-            Write-Host '  This looks like the APPLICATION ROOT.' -ForegroundColor Green
-            Write-Host '  vendor.zip and .env belong here, and so does the extracted vendor/.' -ForegroundColor Green
+            Write-Host '  This is the APPLICATION ROOT.' -ForegroundColor Green
+            Write-Host '  .env, artisan and vendor.zip belong here, and so does the extracted vendor/.' -ForegroundColor Green
+        } elseif ($names -contains 'laravel-app') {
+            Write-Host '  NESTING PROBLEM: the listing shows the laravel-app folder itself.' -ForegroundColor Red
+            Write-Host '  The account is rooted ONE LEVEL TOO HIGH, so a deploy would upload to' -ForegroundColor Red
+            Write-Host '  the level ABOVE the application and nothing would change on the site.' -ForegroundColor Red
+            Write-Host '  Fix the Directory on the FTP account in cPanel, or set server-dir to match.' -ForegroundColor Red
         } elseif ($names -contains 'itrequest.mwstay.com') {
-            Write-Host '  NESTING PROBLEM: the listing shows the subdomain folder itself.' -ForegroundColor Red
-            Write-Host '  The FTP account is rooted one level too high, so a deploy would upload' -ForegroundColor Red
-            Write-Host '  into a folder BESIDE the application and nothing would change on the site.' -ForegroundColor Red
-            Write-Host "  Fix the FTP account directory in cPanel > FTP Accounts." -ForegroundColor Red
+            Write-Host '  NESTING PROBLEM: the listing shows the domain folder itself.' -ForegroundColor Red
+            Write-Host '  Expected this account to land in laravel-app.' -ForegroundColor Red
         } elseif ($names.Count -eq 0) {
             Write-Host '  EMPTY. The account points at an empty directory.' -ForegroundColor Red
         } else {

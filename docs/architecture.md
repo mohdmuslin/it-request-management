@@ -272,7 +272,7 @@ same as correcting a *user* record — see `database-design.md` §5.
 ## 8. Deployment (cPanel, no SSH)
 
 ```
-/home/mwstayco/itrequest.mwstay.com/
+/home/aitirikuesform/itrequest.mwstay.com/laravel-app/
   public/            ← DOCROOT: index.php, .htaccess, build/
   app/  bootstrap/  config/  database/  resources/  routes/  storage/  vendor/
   artisan            ← application root; .env lives here
@@ -281,8 +281,8 @@ same as correcting a *user* record — see `database-design.md` §5.
 
 | Item | Value |
 |---|---|
-| App root | `/home/mwstayco/itrequest.mwstay.com/` |
-| Document root | `/home/mwstayco/itrequest.mwstay.com/public` |
+| App root | `/home/aitirikuesform/itrequest.mwstay.com/laravel-app/` |
+| Document root | `/home/aitirikuesform/itrequest.mwstay.com/laravel-app/public` |
 | URL | `https://itrequest.mwstay.com/` |
 
 **Verified 2026-09-24:** the document root was repointed at `public/`, directory indexing was
@@ -291,8 +291,8 @@ disabled, and `/cgi-bin/` and `/php.ini` moved out of reach (both now 404). `.en
 ### Cron
 
 ```
-* * * * * cd /home/mwstayco/itrequest.mwstay.com && /usr/local/bin/php artisan schedule:run >> /dev/null 2>&1
-* * * * * cd /home/mwstayco/itrequest.mwstay.com && /usr/local/bin/php artisan queue:work --stop-when-empty >> /dev/null 2>&1
+* * * * * cd /home/aitirikuesform/itrequest.mwstay.com/laravel-app && /usr/local/bin/php artisan schedule:run >> /dev/null 2>&1
+* * * * * cd /home/aitirikuesform/itrequest.mwstay.com/laravel-app && /usr/local/bin/php artisan queue:work --stop-when-empty >> /dev/null 2>&1
 ```
 
 > Both redirect to `/dev/null`, so a wrong PHP path or directory fails **completely silently**.
