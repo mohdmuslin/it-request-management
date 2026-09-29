@@ -11,21 +11,30 @@ directory for its package manifest. Absent, PHP dies with a fatal BEFORE Laravel
 registered, so the browser receives **500 with a zero-length body** and NOTHING is written to
 `storage/logs`. There is no message anywhere to search for.
 
-WHY IT CANNOT BE FIXED IN CODE
+WHY IT CANNOT BE FIXED ONLY IN CODE
 
-The obvious fix -- create the directory in `itrequest:install` or `itrequest:deploy` -- DOES NOT
-WORK, and this was verified rather than assumed. Those commands are Laravel commands, and Laravel
+The obvious fix -- create the directory in `itrequest:install` or `itrequest:deploy` -- DOES NOT WORK
+ALONE, and this was verified rather than assumed. Those commands are Laravel commands, and Laravel
 cannot boot without the directory they are supposed to create. `artisan` never resolves the command,
 so `ensureStorageTree()` is never reached. The dependency runs the wrong way.
 
-The commands' `ensureStorageTree()` still creates it, and that is worth keeping: it repairs a server
-that already has a working application but has lost the directory. It cannot rescue one where
-`artisan` cannot start at all, which is precisely the fresh-deploy case.
+THAT IS NOW FIXED, BUT NOT BY THESE FILES -- AND THIS SENTINEL IS STILL REQUIRED
+
+`bootstrap/ensure-storage.php` is the file that actually repairs a fresh server. It is required by
+BOTH `public/index.php` and `artisan`, before anything else is loaded, and it creates this directory
+as well as the `storage/` tree. The same trap applies to `storage/framework/views`, which is excluded
+from the transfer outright, and which is why the repair had to move out of the commands entirely.
+
+This sentinel is kept anyway, and the reason is ordering. `ensure-storage.php` runs at the top of
+`artisan` and `public/index.php`; it does NOT run for anything that loads `bootstrap/app.php`
+directly, and it does not help if the deploy ever stops shipping that file. It costs 500 bytes of
+comment and it makes the directory exist in git, which is the cheapest possible version of this
+fix. Defence in depth on a host with no shell is not redundancy -- it is the only recovery path.
 
 WHY THIS FILE IS SAFE IN A PUBLIC REPOSITORY
 
-It contains no secrets and no configuration. It is 500 bytes of explanation whose only functional
-purpose is to make the directory exist in git, and therefore in the transfer.
+It contains no secrets and no configuration. It is a comment whose only functional purpose is to
+make the directory exist in git, and therefore in the transfer.
 
 The name is deliberate: `keep` is not matched by any pattern in the deploy's exclude list, unlike
 `.gitignore`, which is matched by the `.git` wildcard rule. A `.gitkeep` would have been the
