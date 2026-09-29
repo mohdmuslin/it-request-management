@@ -203,6 +203,84 @@ jobs:
           echo "vendor.zip will ship: ${entries} entries, ${size} kB."
 
       # -----------------------------------------------------------------
+      # Confirm the FTP credentials are present, BEFORE the upload step uses them.
+      #
+      # WHY THIS EXISTS
+      #
+      # `FTP-Deploy-Action` reports a missing input as:
+      #
+      #     Error: Input required and not supplied: server
+      #
+      # That message names the ACTION'S PARAMETER, not the GitHub secret behind it. So it reads as
+      # a workflow misconfiguration when the actual cause is that `FTP_SERVER` is empty — and the
+      # fix is in repository settings, not in this file. It also does not say WHICH of the three is
+      # missing, so a run with two of them set gives the same message as a run with none.
+      #
+      # A secret's VALUE can never be read back, by design. Its PRESENCE can be tested, which is
+      # exactly the question here. Each is checked separately so the message names the one to fix.
+      #
+      # THE COMMONEST CAUSE, worth stating: `FTP_DEPLOY_ENABLED` is a VARIABLE, and the three FTP
+      # credentials are SECRETS. Two different tabs under Settings → Secrets and variables → Actions.
+      # Putting all four in one tab gives either an unarmed deploy or this failure.
+      # -----------------------------------------------------------------
+      - name: Assert the FTP credentials are set
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          missing=""
+
+          [ -z "$FTP_SERVER" ]   && missing="$missing FTP_SERVER"
+          [ -z "$FTP_USERNAME" ] && missing="$missing FTP_USERNAME"
+          [ -z "$FTP_PASSWORD" ] && missing="$missing FTP_PASSWORD"
+
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing"
+            echo ""
+            echo "Add them under Settings -> Secrets and variables -> Actions -> **Secrets** tab"
+            echo "(NOT the Variables tab, which holds FTP_DEPLOY_ENABLED):"
+            echo ""
+            echo "  FTP_SERVER    ftp.mwstay.com                  (host only - no path, no protocol)"
+            echo "  FTP_USERNAME  aitirikuesform@itrequest.mwstay.com"
+            echo "  FTP_PASSWORD  the FTP account password"
+            echo ""
+            echo "A secret name is case-sensitive and must match exactly."
+            exit 1
+          fi
+
+          # NO SECRET VALUE IS PRINTED, AND THAT INCLUDES THE USERNAME.
+          #
+          # This repository is PUBLIC, so Actions logs are readable by anyone. An FTP login name is
+          # half a credential and it also confirms the account exists, so printing it would trade a
+          # small diagnostic convenience for a real disclosure. Length and shape are enough to
+          # catch what actually goes wrong here — a truncated paste, or the wrong tab.
+          echo "All three FTP secrets are present."
+          echo "  FTP_SERVER   : ${#FTP_SERVER} characters, ends '$(echo "$FTP_SERVER" | rev | cut -d. -f1-2 | rev)'"
+          echo "  FTP_USERNAME : ${#FTP_USERNAME} characters, contains $(echo "$FTP_USERNAME" | tr -cd '@' | wc -c) '@'"
+          echo "  FTP_PASSWORD : ${#FTP_PASSWORD} characters"
+
+          if ! echo "$FTP_USERNAME" | grep -q '@'; then
+            echo "::warning::FTP_USERNAME has no '@'. cPanel FTP logins are usually the full address, e.g. user@domain.com."
+          fi
+
+          case "$FTP_SERVER" in
+            *://*)
+              echo "::error::FTP_SERVER must be a bare host. Remove the scheme — use 'ftp.mwstay.com', not 'ftp://ftp.mwstay.com'."
+              exit 1
+              ;;
+          esac
+
+          case "$FTP_SERVER" in
+            */*)
+              echo "::error::FTP_SERVER contains a path. It must be the HOST ONLY — the directory comes from the FTP account's own root in cPanel. Use 'ftp.mwstay.com', not 'ftp.mwstay.com/itrequest'."
+              exit 1
+              ;;
+          esac
+
+          echo "FTP_SERVER is a bare hostname, as required."
+
+      # -----------------------------------------------------------------
       # Arm the post-deploy hook.
       #
       # There is no shell on the host, so the workflow cannot run the post-upload steps
