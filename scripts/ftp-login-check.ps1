@@ -31,6 +31,22 @@ if (-not $Username) {
     $Username = Read-Host -Prompt 'FTP username'
 }
 
+# A typo in the DOMAIN SUFFIX of the login is the worst kind, because a wrong suffix and a wrong
+# password both produce `530 Login authentication failed` - so the error sends you to reset a
+# password that was never the problem. The cPanel login for this project is
+# `aitirikuesform@itrequest.mwstay.com`; a `.my` or `.net` suffix looks plausible and is wrong.
+if ($Username -match '@' ) {
+    $suffix = ($Username -split '@')[-1]
+
+    if ($suffix -ne 'itrequest.mwstay.com') {
+        Write-Host ''
+        Write-Host "WARNING: the login suffix is '$suffix'." -ForegroundColor Yellow
+        Write-Host '  Expected: itrequest.mwstay.com' -ForegroundColor Yellow
+        Write-Host '  A wrong suffix fails with 530, exactly like a wrong password, so it is worth' -ForegroundColor Yellow
+        Write-Host '  copying the username straight out of cPanel rather than retyping it.' -ForegroundColor Yellow
+    }
+}
+
 Write-Host ''
 Write-Host "Server   : $Server" -ForegroundColor Cyan
 Write-Host "Username : $Username" -ForegroundColor Cyan
