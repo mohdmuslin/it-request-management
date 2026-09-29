@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\DB;
  *
  * WHY IT RUNS ON THE SERVER AT ALL
  *
- * The deployment workflow uploads finished files and then cannot do anything else —
+ * The deployment workflow uploads finished files and then cannot do anything else -
  * there is no shell on the host, so the workflow's last act is to leave a flag file
  * that a cron job picks up. This command is what the cron job runs.
  *
@@ -42,7 +42,7 @@ class RunDeployment extends Command
         /*
          * 1. Storage tree FIRST.
          *
-         * Everything after this assumes it exists — the cache writer, the view
+         * Everything after this assumes it exists - the cache writer, the view
          * compiler, the log writer. A missing `storage/framework/views` produces "View
          * path not found", and a missing `storage/logs` means that error cannot be
          * logged, so the log looks empty and the application looks innocent.
@@ -60,7 +60,7 @@ class RunDeployment extends Command
          *
          * `config:cache` writes a compiled config file that is loaded instead of the
          * `.env`, and a stale one makes `migrate` connect using the OLD database
-         * credentials — so a release that changed the database name migrates the wrong
+         * credentials - so a release that changed the database name migrates the wrong
          * database, successfully and silently.
          */
         $this->step('Clearing stale caches');
@@ -79,7 +79,7 @@ class RunDeployment extends Command
          * 3. Migrate.
          *
          * `--force` because the environment is production and Laravel otherwise prompts,
-         * which on a cron job means hanging until the job times out — with the migration
+         * which on a cron job means hanging until the job times out - with the migration
          * half-applied and nothing in the log to say why.
          */
         if ($this->option('skip-migrate')) {
@@ -119,7 +119,7 @@ class RunDeployment extends Command
          *
          * `config:cache` replaces the configuration repository with a compiled file and
          * forces the container to rebuild. In the same process that means the command
-         * continues with a different config object than it started with — and against an
+         * continues with a different config object than it started with - and against an
          * in-memory SQLite database, the rebuild opens a NEW connection, which is a NEW
          * EMPTY database. This was reproduced: the verification step in this very command
          * then reported "no such table: workflow_stages", a failure the command had
@@ -148,17 +148,17 @@ class RunDeployment extends Command
          *
          * A deploy that reports success while the site is broken is worse than one that
          * fails: nobody looks. These checks are cheap and they catch the failures that
-         * actually happen — a missing front controller, a database that cannot be read.
+         * actually happen - a missing front controller, a database that cannot be read.
          *
          * SKIPPED IN A DRY RUN, deliberately.
          *
          * A dry run applies nothing: it skips the migration, so the schema may not match
          * the code on disk. Verifying then reports a problem the dry run itself caused,
-         * which is worse than not verifying at all — the operator sees a failure, cannot
+         * which is worse than not verifying at all - the operator sees a failure, cannot
          * tell whether it is real, and learns to distrust the check.
          */
         if ($dry) {
-            $this->step('Skipping verification (dry run — nothing was applied)');
+            $this->step('Skipping verification (dry run - nothing was applied)');
             $this->newLine();
             $this->info('Dry run complete. Nothing was changed.');
 
@@ -199,7 +199,7 @@ class RunDeployment extends Command
 
         foreach (['framework/views', 'framework/cache', 'logs'] as $directory) {
             if (! is_dir(storage_path($directory))) {
-                $problems[] = "storage/{$directory} is missing — the application will fail with a message that does not name this.";
+                $problems[] = "storage/{$directory} is missing - the application will fail with a message that does not name this.";
             }
         }
 
@@ -211,15 +211,15 @@ class RunDeployment extends Command
         }
 
         if (! is_file(public_path('index.php'))) {
-            $problems[] = 'public/index.php is missing — the web server has nothing to execute and every request returns 403.';
+            $problems[] = 'public/index.php is missing - the web server has nothing to execute and every request returns 403.';
         }
 
         if (! is_file(public_path('build/manifest.json'))) {
-            $problems[] = 'public/build/manifest.json is missing — the frontend was not built, and every page renders blank.';
+            $problems[] = 'public/build/manifest.json is missing - the frontend was not built, and every page renders blank.';
         }
 
         if ((string) config('app.key') === '') {
-            $problems[] = 'APP_KEY is empty — sessions and encrypted values will not work. Run itrequest:install.';
+            $problems[] = 'APP_KEY is empty - sessions and encrypted values will not work. Run itrequest:install.';
         }
 
         /*
@@ -229,7 +229,7 @@ class RunDeployment extends Command
          * deliberately breaks a page.
          */
         if (app()->environment('production') && (bool) config('app.debug')) {
-            $problems[] = 'APP_DEBUG is on in production — error pages will expose file paths and configuration.';
+            $problems[] = 'APP_DEBUG is on in production - error pages will expose file paths and configuration.';
         }
 
         return $problems;
@@ -237,20 +237,40 @@ class RunDeployment extends Command
 
     private function step(string $label): void
     {
-        $this->line($label.'…');
+        $this->line($label.'...');
     }
 
-    /** See InstallApplication::ensureStorageTree() for why these directories matter. */
+    /**
+     * See InstallApplication::ensureStorageTree() for the full reasoning.
+     *
+     * THE TWO ENTRIES THAT MATTER ARE `bootstrap/cache` AND THE FACT THAT PATHS ARE ABSOLUTE.
+     *
+     * `bootstrap/cache` never reaches the server: Laravel gitignores everything in it, so the only
+     * tracked file is a `.gitignore`, and the deploy excludes ``the .git wildcard``. Absent, `artisan` dies
+     * with a PHP fatal BEFORE Laravel's error handler exists - so a deploy leaves a site answering
+     * **500 with a zero-length body and an empty log**, which is the hardest failure on this host
+     * to diagnose and cost an afternoon to find.
+     *
+     * And these are `base_path()` NOT `storage_path()`, because `bootstrap/cache` is not under
+     * `storage/`. Calling `storage_path('bootstrap/cache')` creates `storage/bootstrap/cache` -
+     * a real directory, created successfully, reported as done, and never looked in.
+     *
+     * This command runs on EVERY deploy, so it is also what repairs a server that lost the
+     * directory - for instance one deployed before this fix existed.
+     */
     private function ensureStorageTree(): void
     {
-        foreach ([
-            'app/private/attachments',
-            'framework/cache/data',
-            'framework/sessions',
-            'framework/views',
-            'logs',
-        ] as $directory) {
-            $path = storage_path($directory);
+        $directories = [
+            'bootstrap/cache',
+            'storage/app/private/attachments',
+            'storage/framework/cache/data',
+            'storage/framework/sessions',
+            'storage/framework/views',
+            'storage/logs',
+        ];
+
+        foreach ($directories as $directory) {
+            $path = base_path($directory);
 
             if (! is_dir($path)) {
                 mkdir($path, 0755, true);

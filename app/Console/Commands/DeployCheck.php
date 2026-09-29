@@ -21,8 +21,8 @@ use Illuminate\Support\Facades\DB;
  * WHY IT EXISTS AT ALL
  *
  * Every failure this catches is SILENT in production. A missing public holiday does not
- * raise anything — it just moves a due date by a day. An administrator without a
- * department does not fail — the request just reports against nothing. Nobody notices
+ * raise anything - it just moves a due date by a day. An administrator without a
+ * department does not fail - the request just reports against nothing. Nobody notices
  * any of them until a report is wrong months later, and then the cause is very hard to
  * find.
  *
@@ -41,7 +41,7 @@ class DeployCheck extends Command
 
     public function handle(): int
     {
-        $this->line('IT Request Management — pre-flight check');
+        $this->line('IT Request Management - pre-flight check');
         $this->line('Environment: '.app()->environment());
         $this->line('URL:         '.config('app.url'));
         $this->line('Database:    '.config('database.default'));
@@ -123,7 +123,7 @@ class DeployCheck extends Command
     private function checkStorage(): void
     {
         /*
-         * The Composer autoloader, first — because without it NOTHING ELSE CAN RUN.
+         * The Composer autoloader, first - because without it NOTHING ELSE CAN RUN.
          *
          * `public/index.php` requires `vendor/autoload.php` on its first line, so a server whose
          * `vendor/` is absent answers 500 with a ZERO-LENGTH body: PHP died before Laravel started,
@@ -131,7 +131,7 @@ class DeployCheck extends Command
          * reads like a host fault.
          *
          * The cause is almost always that `vendor.zip` has not been extracted. This host has no
-         * shell, so the deploy uploads the archive and extraction is a manual cPanel step — one
+         * shell, so the deploy uploads the archive and extraction is a manual cPanel step - one
          * that is easy to miss precisely because every check in the workflow passed on the runner,
          * where `vendor/` exists.
          *
@@ -143,11 +143,39 @@ class DeployCheck extends Command
         if (! is_file(base_path('vendor/autoload.php'))) {
             $this->flagFail(
                 'vendor/autoload.php is missing. Extract vendor.zip in the application root '
-                .'(cPanel → File Manager → right-click vendor.zip → Extract). Until then every page '
+                .'(cPanel -> File Manager -> right-click vendor.zip -> Extract). Until then every page '
                 .'returns 500 with an empty body and nothing is written to the log.'
             );
         } else {
             $this->flagPass('Composer autoloader present.');
+        }
+
+        /*
+         * `bootstrap/cache` - the OTHER empty-500, and the harder one to find.
+         *
+         * Laravel gitignores everything in this directory, so the only tracked file is a
+         * `.gitignore` - and the deploy excludes ``the .git wildcard``. The DIRECTORY therefore never arrives,
+         * and absent, `artisan` dies with a PHP fatal before Laravel's error handler exists: the
+         * browser gets 500 with a zero-length body, and the log gets nothing at all.
+         *
+         * `itrequest:install` and `itrequest:deploy` both create it. This check exists because the
+         * symptom is unreportable from anywhere else - there is no log entry to read, and this
+         * command is what an operator runs when the site is down.
+         *
+         * Note this check cannot be trusted when `vendor/autoload.php` is ALSO missing, because in
+         * that case this command could not have run. The two together are a fresh, unconfigured
+         * server rather than a fault.
+         */
+        if (! is_dir(base_path('bootstrap/cache'))) {
+            $this->flagFail(
+                'bootstrap/cache is missing. Every page will return 500 with an EMPTY body and write '
+                .'nothing to the log - `artisan` cannot boot without it. Run `php artisan itrequest:deploy` '
+                .'by cron, which creates it.'
+            );
+        } elseif (! is_writable(base_path('bootstrap/cache'))) {
+            $this->flagFail('bootstrap/cache is not writable by the web server. Caching will fail at runtime.');
+        } else {
+            $this->flagPass('bootstrap/cache present and writable.');
         }
 
         foreach (['framework/views', 'framework/cache', 'logs'] as $directory) {
@@ -182,7 +210,7 @@ class DeployCheck extends Command
          * Counted from the migrations TABLE against the files on disk.
          *
          * Deliberately not parsed from `migrate:status` output, which is decorated with
-         * borders and changes format between Laravel versions — a check that silently
+         * borders and changes format between Laravel versions - a check that silently
          * stops working is worse than no check.
          */
         try {
@@ -195,7 +223,7 @@ class DeployCheck extends Command
                 $this->flagPass("All {$available} migrations have run.");
             }
         } catch (\Throwable) {
-            $this->flagFail('The migrations table is missing — the schema has not been created.');
+            $this->flagFail('The migrations table is missing - the schema has not been created.');
         }
     }
 
@@ -217,7 +245,7 @@ class DeployCheck extends Command
 
         /*
          * A classification with no assigned review units means requests of that type go
-         * straight from assessment to consolidation with no technical opinion — which
+         * straight from assessment to consolidation with no technical opinion - which
          * looks like the review stage being skipped, and is.
          */
         $unmapped = DB::table('classifications')
@@ -237,7 +265,7 @@ class DeployCheck extends Command
      * Departments and divisions must exist before anybody can raise a request.
      *
      * Both are required fields in wizard step 1, so an empty list means the wizard is
-     * unusable — and it fails at the last step of a form the requestor has already
+     * unusable - and it fails at the last step of a form the requestor has already
      * filled in.
      */
     private function checkOrganisation(): void
@@ -260,7 +288,7 @@ class DeployCheck extends Command
     /**
      * The calendar.
      *
-     * Running without public holidays is not an error — the application works — but
+     * Running without public holidays is not an error - the application works - but
      * every due date that lands on a holiday will be wrong, and the aging report will
      * report delays nobody could have avoided.
      */
@@ -286,7 +314,7 @@ class DeployCheck extends Command
         if ($stagesWithoutTargets->isNotEmpty()) {
             /*
              * Not a failure, deliberately. A stage with no agreed target is a legitimate
-             * state — it is the position the current process is in for every stage — and
+             * state - it is the position the current process is in for every stage - and
              * the application states that rather than inventing a deadline. But it means
              * those requests can never be reported as overdue, so it is worth saying.
              */
@@ -346,7 +374,7 @@ class DeployCheck extends Command
     }
 
     /**
-     * Email — the Phase C gate.
+     * Email - the Phase C gate.
      *
      * Reported as a WARNING rather than a failure, because the application is entirely
      * usable without it: notifications are recorded in the `notifications` table with
@@ -397,7 +425,7 @@ class DeployCheck extends Command
          * streams splits the report: redirecting the output to a file captures only the
          * findings that went to stdout, so the warnings and failures vanish while the
          * summary still counts them. That is exactly what happened on the first run of
-         * this command — the file held "14 warning(s)" and none of the 14.
+         * this command - the file held "14 warning(s)" and none of the 14.
          *
          * This command exists to be read from a log by somebody with no shell, so a
          * report that loses half its content when redirected defeats its whole purpose.
@@ -425,7 +453,7 @@ class DeployCheck extends Command
         if ($failures > 0) {
             $this->line('Resolve the FAILURES before going live.');
         } elseif ($warnings > 0) {
-            $this->line('No failures. Read the warnings — each one names something that will look');
+            $this->line('No failures. Read the warnings - each one names something that will look');
             $this->line('like a bug later if it is left.');
         } else {
             $this->line('Nothing outstanding.');
