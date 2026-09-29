@@ -68,9 +68,16 @@ class InstallApplication extends Command
          * A fresh server reached over FTP has no `storage/framework/views` - the deploy
          * deliberately does not upload anything under `storage/`, because that is where
          * sessions, compiled views and uploaded documents live. Without this directory
-         * the application dies with "View path not found", a message that names views
-         * rather than the missing folder, and the log is empty because `storage/logs`
-         * is missing too.
+         * the framework throws "Please provide a valid cache path" while it is starting,
+         * because the compiled-view path is resolved with `realpath()`, which returns
+         * FALSE for a directory that is not there. That message names views rather than
+         * the missing folder, and the log is empty because `storage/logs` is missing too.
+         *
+         * In practice `bootstrap/ensure-storage.php` has already repaired the tree by the
+         * time this runs - it is required by `artisan` before anything loads, and it has
+         * to be, because this command is an artisan command and could not otherwise boot
+         * on a server whose tree is missing. This call remains for the case where the
+         * tree is deleted while the command is running.
          */
         $this->ensureStorageTree();
 
@@ -260,9 +267,20 @@ class InstallApplication extends Command
      *
      * `storage/` is excluded from the transfer deliberately - it holds sessions, compiled views and
      * uploaded documents, and overwriting it would destroy server state. Missing
-     * `storage/framework/views` produces "View path not found", which names views rather than the
-     * folder, and missing `storage/logs` means the error cannot be logged, so the log looks empty
-     * and innocent.
+     * `storage/framework/views` makes `Compiler` throw "**Please provide a valid cache path.**",
+     * because the compiled-view path is resolved with `realpath()`, which returns FALSE for a
+     * directory that is not there. That message names VIEWS rather than a missing folder, and
+     * missing `storage/logs` means the error cannot be logged, so the log looks empty and innocent.
+     *
+     * WHAT THIS METHOD CANNOT DO, AND WHY `bootstrap/ensure-storage.php` EXISTS
+     *
+     * This method repairs the tree, but it is an ARTISAN command, and artisan cannot boot without
+     * `storage/framework/views` - it throws the message above while the framework is starting.
+     * So listing paths here, however carefully ordered, never helped: the command could not run
+     * on the very server it was written for. `bootstrap/ensure-storage.php` is required by BOTH
+     * `artisan` and `public/index.php` and runs before anything else is loaded, which is the only
+     * place a repair can happen when the thing being repaired is needed to run the repair. This
+     * method stays as the second line of defence, for a tree deleted while the app is running.
      *
      * `bootstrap/cache` is missing for a subtler reason, and it is the WORSE of the two.
      * Laravel gitignores everything in it, so the only tracked file is a `.gitignore` - and the

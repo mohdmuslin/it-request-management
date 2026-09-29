@@ -174,9 +174,17 @@ Wait a minute, read `install.log`, then **delete the job**.
 The installer:
 
 1. Creates the storage tree — **first**, because everything else assumes it exists.
-   A missing `storage/framework/views` produces *"View path not found"*, which names views
+   A missing `storage/framework/views` makes the framework throw *"Please provide a valid
+   cache path"* while it is starting, because the compiled-view path is resolved with
+   `realpath()`, which returns FALSE for a directory that is not there. That names views
    rather than the missing folder, and a missing `storage/logs` means the error cannot be
    logged, so the log looks empty and innocent.
+
+   **This step cannot be the one that saves you.** The installer is an artisan command and
+   artisan cannot boot without the directory this step creates, so the dependency runs the
+   wrong way round. `bootstrap/ensure-storage.php` is required by both `artisan` and
+   `public/index.php` before anything else loads, and *that* is what repairs the tree on a
+   fresh server. This step is the second line of defence.
 2. Generates `APP_KEY` **only if it is absent**. It never replaces an existing key:
    regenerating one invalidates every session and makes any encrypted value permanently
    unreadable.
@@ -269,7 +277,7 @@ human deciding what counts as a problem.
 |---|---|
 | `APP_KEY` set | Without it every session is invalid. The application appears to work until somebody signs in |
 | Debug off in production | Error pages expose file paths and configuration to anyone who can trigger one |
-| Storage writable | A missing `views` directory is *"View path not found"* — a message that names views rather than the folder |
+| Storage writable | A missing `views` directory makes the framework throw *"Please provide a valid cache path"* — naming views rather than the folder |
 | Migrations current | Compared against the files on disk, not parsed from `migrate:status`, which changes format between versions |
 | Reference data present | An empty tier list makes the wizard unusable, and it fails at the **last** step of a form already filled in |
 | **Departments exist** | A required field in wizard step 1. Empty means the wizard cannot be completed at all |
@@ -489,8 +497,9 @@ first and the email second — and after that the email can change without break
 
 | Symptom | First thing to check |
 |---|---|
-| **500 with a ZERO-LENGTH body, and an empty log** | **`vendor/` is missing — `vendor.zip` has not been extracted.** `public/index.php` requires `vendor/autoload.php` on its first line, so PHP dies before Laravel starts and nothing is written to the log. See §3.1a. Run `itrequest:deploy-check`, which names this |
-| **500 on every page** | The storage tree. A fresh FTP-deployed Laravel has no `storage/framework/views` |
+| **500 with a ZERO-LENGTH body, and an empty log** | **There are TWO causes with this exact signature, and they are indistinguishable from the browser.** (1) `vendor/` is missing — `vendor.zip` has not been extracted; `public/index.php` requires `vendor/autoload.php` on its first line, so PHP dies before Laravel starts. See §3.1a. (2) The storage tree is missing — see the row below. Run `itrequest:deploy-check`, which names both |
+| **500 on every page** | The storage tree. A fresh FTP-deployed Laravel has no `storage/framework/views`, because `storage/**` is excluded from the transfer and Git cannot carry an empty directory. The framework resolves its compiled-view path with `realpath()`, which returns `FALSE` for a directory that is not there, and then reports *"Please provide a valid cache path"* — a message that names **views**, not a missing folder. `bootstrap/ensure-storage.php` repairs this before the framework boots, so if this is happening the file is not being reached |
+| **`Cannot declare class ... because the name is already in use`** | Two copies of `vendor/` — `vendor.zip` was extracted over an existing tree. Delete `vendor/` and extract once |
 | **500, and the log is empty** | `storage/logs` may not exist, so the error cannot be written. An empty log is **not** "nothing is wrong" |
 | **403 on every page** | `public/index.php` is missing, or the document root is wrong |
 | **Blank page** | `public/build/manifest.json` is missing — the frontend did not build, and a missing manifest is not a build error |

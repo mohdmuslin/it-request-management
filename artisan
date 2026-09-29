@@ -6,6 +6,12 @@ use Symfony\Component\Console\Input\ArgvInput;
 
 define('LARAVEL_START', microtime(true));
 
+// Repair the storage tree BEFORE the framework boots — see the comments in
+// that file. This is what makes `itrequest:install` runnable on a host whose
+// storage tree was excluded from the transfer, including the case where the
+// exclusion itself is what removed it.
+require __DIR__.'/bootstrap/ensure-storage.php';
+
 // Register the Composer autoloader...
 require __DIR__.'/vendor/autoload.php';
 

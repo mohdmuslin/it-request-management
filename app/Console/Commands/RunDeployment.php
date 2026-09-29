@@ -43,9 +43,17 @@ class RunDeployment extends Command
          * 1. Storage tree FIRST.
          *
          * Everything after this assumes it exists - the cache writer, the view
-         * compiler, the log writer. A missing `storage/framework/views` produces "View
-         * path not found", and a missing `storage/logs` means that error cannot be
-         * logged, so the log looks empty and the application looks innocent.
+         * compiler, the log writer. A missing `storage/framework/views` makes the
+         * framework throw "Please provide a valid cache path" while it is starting, and
+         * a missing `storage/logs` means that error cannot be logged, so the log looks
+         * empty and the application looks innocent.
+         *
+         * This is the SECOND line of defence. The first is
+         * `bootstrap/ensure-storage.php`, required by `artisan` and `public/index.php`
+         * before anything loads. It has to be, because this command is an artisan
+         * command: without that file it cannot boot to reach this step, so the step
+         * that was written to create `storage/framework/views` required
+         * `storage/framework/views` to already exist.
          */
         $this->step('Ensuring the storage tree');
 

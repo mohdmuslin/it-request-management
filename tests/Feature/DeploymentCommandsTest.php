@@ -144,9 +144,17 @@ it('refuses to install over an application that already has users', function () 
 it('creates the storage tree before anything else', function () {
     /*
      * First, because everything after it assumes the directories exist. Missing
-     * `storage/framework/views` produces "View path not found" — a message that names
-     * views rather than the folder — and missing `storage/logs` means that error cannot
-     * be logged, so the log looks empty and the application looks innocent.
+     * `storage/framework/views` makes the framework throw "Please provide a valid cache
+     * path" while it is starting — a message that names views rather than the folder —
+     * and missing `storage/logs` means that error cannot be logged, so the log looks
+     * empty and the application looks innocent.
+     *
+     * Note what this test does NOT cover: that the command can RUN on a server whose
+     * tree is missing. It cannot, and no amount of ordering inside the command changes
+     * that, because `artisan` itself needs `storage/framework/views` to boot. The
+     * pre-boot repair is `bootstrap/ensure-storage.php`, covered by
+     * `tests/Feature/StorageTreeTest.php` and by a CI step that deletes the tree and
+     * boots.
      */
     $path = storage_path('app/private/attachments');
 

@@ -404,12 +404,22 @@ jobs:
           #                       deploy that cannot work.
           #
           # A NOTE ON THE STORAGE TREE. Excluding these paths means the empty directories
-          # are not uploaded either, so a fresh server has no `storage/framework/views` —
-          # and the application then dies with "View path not found", a message that names
-          # views rather than a missing folder, with an empty log because storage/logs is
-          # missing too. That is handled in CODE, by `itrequest:install` and
-          # `itrequest:deploy`, rather than with `!` negation patterns whose semantics
-          # would have to be trusted.
+          # are not uploaded either, and Git cannot carry an empty directory, so a fresh
+          # server has no `storage/framework/views`.
+          #
+          # An earlier version of this comment said that was "handled in CODE, by
+          # `itrequest:install` and `itrequest:deploy`". It was not. Both are artisan
+          # commands, and artisan CANNOT BOOT without the directory they create:
+          #
+          #     'compiled' => env('VIEW_COMPILED_PATH', realpath(storage_path('framework/views')))
+          #
+          # `realpath()` returns FALSE when the directory is absent, and `Compiler` then
+          # throws "Please provide a valid cache path." So the repair needed the thing it
+          # repaired, and neither command could ever run. The live site answered 500 with
+          # a zero-length body and an empty log, which is why it took this long to find.
+          #
+          # The repair now runs BEFORE the framework boots, from both entry points, in
+          # `bootstrap/ensure-storage.php`. CI deletes the tree and boots to prove it.
           # -----------------------------------------------------------------
           exclude: |
             **/.git*

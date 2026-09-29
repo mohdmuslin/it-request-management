@@ -60,6 +60,61 @@ jobs:
           cp .env.example .env
           php artisan key:generate
 
+      # -----------------------------------------------------------------
+      # The storage tree MUST be able to rebuild itself.
+      #
+      # The deploy excludes `storage/**`, and that exclusion is deliberate:
+      # the tree holds the sessions, the log, and the tender documents
+      # attached to a request — data that exists nowhere else and that no
+      # database backup contains. Exclusions are honoured in BOTH directions,
+      # and Git cannot carry an empty directory, so a freshly unpacked release
+      # has NO `storage/framework/views`.
+      #
+      # Laravel resolves its compiled-view path with `realpath()`, which
+      # returns FALSE for a directory that is not there:
+      #
+      #     'compiled' => env('VIEW_COMPILED_PATH', realpath(storage_path('framework/views')))
+      #
+      # `Compiler::__construct()` then tests `! $cachePath` and throws
+      # "Please provide a valid cache path." That names VIEWS rather than a
+      # missing folder, and the log is empty because `storage/logs` went with
+      # it. On the server this surfaces as a 500 with a ZERO-LENGTH body.
+      #
+      # `itrequest:install` cannot repair it — artisan cannot boot without
+      # the directory that command creates, so the dependency runs the wrong
+      # way round. `bootstrap/ensure-storage.php` therefore runs from BOTH
+      # entry points before anything else is loaded.
+      #
+      # This is a BEHAVIOURAL check: it deletes the tree and boots. A grep for
+      # the `require` line would pass on a file that creates the wrong
+      # directories, or that is required too late to matter.
+      # -----------------------------------------------------------------
+      - name: Assert the storage tree rebuilds itself
+        run: |
+          rm -rf storage/framework storage/logs
+
+          if [ -d storage/framework/views ]; then
+            echo "::error::storage/framework/views survived deletion, so this check proves nothing. Fix the check, not the application."
+            exit 1
+          fi
+
+          php artisan --version
+
+          for dir in \
+            storage/framework/views \
+            storage/framework/cache/data \
+            storage/framework/sessions \
+            storage/logs \
+            storage/app/private/attachments
+          do
+            if [ ! -d "$dir" ]; then
+              echo "::error::$dir was not rebuilt. A release unpacked on the server will answer 500 with an empty body and an empty log. Check that bootstrap/ensure-storage.php is required by BOTH public/index.php and artisan."
+              exit 1
+            fi
+          done
+
+          echo "Storage tree rebuilt from nothing."
+
       # The frontend build MUST precede the tests.
       #
       # `public/build` is gitignored, so a fresh checkout has no Vite manifest. Any

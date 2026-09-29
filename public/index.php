@@ -5,6 +5,12 @@ use Illuminate\Http\Request;
 
 define('LARAVEL_START', microtime(true));
 
+// Repair the storage tree BEFORE the framework boots. The deploy excludes
+// `storage/**`, so a fresh release genuinely has no `storage/framework/views`,
+// and the framework refuses to start without it — see the comments in that
+// file for why neither Git nor `itrequest:install` can be the one to fix it.
+require __DIR__.'/../bootstrap/ensure-storage.php';
+
 // Determine if the application is in maintenance mode...
 if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
     require $maintenance;

@@ -154,9 +154,9 @@ class DeployCheck extends Command
          * `bootstrap/cache` - the OTHER empty-500, and the harder one to find.
          *
          * Laravel gitignores everything in this directory, so the only tracked file is a
-         * `.gitignore` - and the deploy excludes ``the .git wildcard``. The DIRECTORY therefore never arrives,
-         * and absent, `artisan` dies with a PHP fatal before Laravel's error handler exists: the
-         * browser gets 500 with a zero-length body, and the log gets nothing at all.
+         * `.gitignore` - and the deploy excludes the `.git` wildcards. The DIRECTORY therefore never
+         * arrives, and absent, `artisan` dies with a PHP fatal before Laravel's error handler exists:
+         * the browser gets 500 with a zero-length body, and the log gets nothing at all.
          *
          * `itrequest:install` and `itrequest:deploy` both create it. This check exists because the
          * symptom is unreportable from anywhere else - there is no log entry to read, and this
@@ -178,9 +178,23 @@ class DeployCheck extends Command
             $this->flagPass('bootstrap/cache present and writable.');
         }
 
+        /*
+         * `framework/views` is not merely a cache. Laravel resolves the compiled-view path with
+         * `realpath()`, which returns FALSE for a directory that is not there, and `Compiler` then
+         * throws "Please provide a valid cache path" WHILE THE FRAMEWORK IS STARTING. So an absent
+         * directory produces a message about views, an empty log, and a 500 - and it prevents
+         * `artisan` from running, which is why `itrequest:deploy` cannot be the fix. The message here
+         * names the directory and the command that repairs it, so the operator is not sent looking
+         * at the view layer.
+         */
         foreach (['framework/views', 'framework/cache', 'logs'] as $directory) {
             if (! is_dir(storage_path($directory))) {
-                $this->flagFail("storage/{$directory} is missing. The application will fail with an error that does not name this.");
+                $this->flagFail(
+                    "storage/{$directory} is missing. Run `php artisan itrequest:deploy` by cron, which "
+                    .'recreates the storage tree. Note that `bootstrap/ensure-storage.php` is supposed to '
+                    .'repair this before the framework boots, so if it is missing the site is running an '
+                    .'older release.'
+                );
             }
         }
 
