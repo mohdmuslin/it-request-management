@@ -384,6 +384,24 @@ jobs:
           #                       tender document attached to a request exists nowhere
           #                       else and no database backup contains it.
           #
+          #   database/*.sqlite   THE DATABASE ITSELF. This one was nearly a disaster.
+          #
+          #                       The application was configured to use SQLite on the live
+          #                       host so a demonstration did not depend on a cPanel MySQL
+          #                       account existing. The file it uses is
+          #                       `database/database.sqlite`, and NOTHING excluded it.
+          #
+          #                       The deploy MIRRORS: a tracked-or-present local file is
+          #                       uploaded, and a file on the server that is absent locally
+          #                       is DELETED. So the very next successful deploy would have
+          #                       replaced the live database - seeded accounts, requests,
+          #                       approvals - with the developer's empty local one. Silently,
+          #                       with every check green, exactly like the `vendor.zip`
+          #                       exclusion that shipped no dependencies.
+          #
+          #                       Excluding it is correct for MySQL too. A `.sqlite` file in
+          #                       a checkout is scratch state, never something to ship.
+          #
           #   vendor/**           a BUILD ARTIFACT, excluded so the `vendor/` directory
           #                       UNPACKED ON THE SERVER IS LEFT ALONE. Excluded paths are
           #                       skipped in BOTH directions, so without this line the
@@ -434,6 +452,10 @@ jobs:
             **/storage/**
             **/.github/**
             **/*.md
+            database/*.sqlite
+            database/*.sqlite-journal
+            **/database/*.sqlite
+            **/database/*.sqlite-journal
             phpunit.xml
             .editorconfig
             .gitattributes
