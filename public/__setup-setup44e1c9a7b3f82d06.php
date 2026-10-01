@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Contracts\Console\Kernel;
+
 /*
 |--------------------------------------------------------------------------
 | TEMPORARY ONE-SHOT SETUP - DELETE THIS FILE AS SOON AS IT HAS RUN
@@ -299,7 +301,7 @@ require $root.'/vendor/autoload.php';
 
 try {
     $app = require $root.'/bootstrap/app.php';
-    $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+    $kernel = $app->make(Kernel::class);
     $kernel->bootstrap();
     say('Booted. Laravel '.$app->version());
     say('Database : '.config('database.default'));
