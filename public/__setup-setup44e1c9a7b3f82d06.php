@@ -1,6 +1,11 @@
 <?php
 
+use App\Models\Department;
+use App\Models\Division;
+use App\Models\Role;
+use App\Models\User;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Support\Facades\Hash;
 
 /*
 |--------------------------------------------------------------------------
@@ -339,7 +344,102 @@ try {
     exit;
 }
 
-// --------------------------------------------------------- 7. admin
+// --------------------------------------------------------- 7. demo data
+
+if (($_GET['demo'] ?? '') === '1') {
+    head('6b. DEMONSTRATION DATA');
+
+    /*
+     * WHY THIS IS DONE HERE RATHER THAN BY `DemoUserSeeder`
+     *
+     * That seeder refuses to run outside the local and testing environments, and it is
+     * RIGHT to refuse: it creates accounts with a hard-coded password, which is how the
+     * sibling project ended up with published credentials. That hard stop is left
+     * exactly as it is.
+     *
+     * A demonstration tomorrow needs an organisation and a few people, though:
+     * wizard step 1 cannot be completed at all without a department, and the project
+     * owner and sponsor have to be different people. So the data is created here, once,
+     * behind an explicit flag - and with a GENERATED password rather than a published
+     * one, because this is running on a live host.
+     */
+    $demoPassword = bin2hex(random_bytes(5)).'-'.bin2hex(random_bytes(3));
+
+    $it = Department::firstOrCreate(['code' => 'IT'], ['name' => 'Information Technology']);
+    $ops = Department::firstOrCreate(['code' => 'OPS'], ['name' => 'Operations']);
+
+    $infra = Division::firstOrCreate(['code' => 'INFRA'], ['name' => 'Infrastructure']);
+    $support = Division::firstOrCreate(['code' => 'SUPPORT'], ['name' => 'Support']);
+
+    say('Departments: '.$it->name.', '.$ops->name);
+    say('Divisions  : '.$infra->name.', '.$support->name);
+    say();
+
+    /*
+     * One person per role, so every screen in the demonstration has somebody who can
+     * legitimately reach it. Mirrors DemoUserSeeder deliberately - the cast is chosen so
+     * the approval chain has a requestor, an owner, a sponsor, both reviewers, the HOU,
+     * the secretariat and an auditor.
+     */
+    $people = [
+        ['Ahmad bin Ali', 'ahmad@demo.test', $it, $infra, ['requestor']],
+        ['Siti Nurhaliza', 'siti@demo.test', $ops, $support, ['project_owner']],
+        ['Tan Wei Ming', 'tan@demo.test', $ops, $support, ['project_sponsor']],
+        ['Nurul Izzah', 'nurul@demo.test', $it, $infra, ['governance_reviewer']],
+        ['Raj Kumar', 'raj@demo.test', $it, $infra, ['technical_reviewer']],
+        ['Aisyah Rahman', 'aisyah@demo.test', $it, $infra, ['hou']],
+        ['Lim Chee Keong', 'lim@demo.test', $it, $infra, ['committee_secretariat']],
+        ['External Auditor', 'auditor@demo.test', $it, $infra, ['auditor']],
+    ];
+
+    $made = 0;
+
+    foreach ($people as [$name, $email, $department, $division, $roles]) {
+        try {
+            $user = User::updateOrCreate(
+                ['email' => $email],
+                [
+                    'name' => $name,
+                    'password' => Hash::make($demoPassword),
+                    'department_id' => $department->id,
+                    'division_id' => $division->id,
+                    'is_active' => true,
+                ],
+            );
+
+            foreach ($roles as $role) {
+                $roleModel = Role::where('name', $role)->first();
+
+                if ($roleModel === null) {
+                    say('  ! role not found: '.$role);
+
+                    continue;
+                }
+
+                $user->roles()->syncWithoutDetaching([$roleModel->id => ['granted_at' => now()]]);
+            }
+
+            say('  created '.str_pad($email, 26).implode(', ', $roles));
+            $made++;
+        } catch (Throwable $e) {
+            say('  ! FAILED '.$email.': '.$e->getMessage());
+        }
+    }
+
+    say();
+    say($made.' demonstration accounts created.');
+    say();
+    say('  ALL DEMO ACCOUNTS USE THIS PASSWORD:  '.$demoPassword);
+    say();
+    say('Write it down - it is not stored anywhere and will not be shown again.');
+} else {
+    head('6b. DEMONSTRATION DATA');
+    say('Not created. Add &demo=1 to the URL to create a department, divisions and');
+    say('one account per role. Wizard step 1 cannot be completed without at least one');
+    say('department, and the owner and sponsor must be different people.');
+}
+
+// --------------------------------------------------------- 8. admin
 
 head('7. FIRST ADMINISTRATOR');
 
